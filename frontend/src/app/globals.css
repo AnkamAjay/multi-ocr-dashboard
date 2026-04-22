@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #4F46E5;
+  --color-primary-hover: #4338ca;
+  --color-secondary: #A78BFA;
+}
+
+body {
+  background: linear-gradient(to bottom right, #ffffff, #eff6ff);
+  color: #1f2937;
+  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
