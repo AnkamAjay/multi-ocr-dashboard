@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime
 
 class AnnotationBase(BaseModel):
@@ -21,6 +21,7 @@ class OCRResultBase(BaseModel):
     extracted_text: str
     corrected_text: Optional[str] = None
     error_count: int = 0
+    raw_json: Optional[Any] = None
 
 class OCRResultResponse(OCRResultBase):
     id: int

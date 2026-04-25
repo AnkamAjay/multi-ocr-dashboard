@@ -62,13 +62,13 @@ async def run_page_ocr(file_path: str, language: str, version: str, modality: st
                     formatted_text = re.sub(r'(?<!\n)\n(?!\n)', ' ', text)
                     
                     if formatted_text.strip():
-                        return formatted_text
-                    return text
+                        return formatted_text, resp_json
+                    return text, resp_json
                 else:
-                    return f"API Error HTTP {response.status_code}: {response.text}"
+                    return f"API Error HTTP {response.status_code}: {response.text}", None
     except Exception as e:
         print(f"Page OCR API failed: {e}")
-        return f"Failed to connect to Page_OCR API. Error: {str(e)}"
+        return f"Failed to connect to Page_OCR API. Error: {str(e)}", None
 
 
 @router.post("/process", response_model=List[schemas.OCRResultResponse])
@@ -109,13 +109,16 @@ async def process_document(document_id: int, language: str = "english", modality
 
     ocr_results = []
     for idx, cfg in enumerate(configs):
+        extracted_text, raw_json = results[idx]
+        
         # Create OCRResult record
         # model_name now stores both the Configuration name and the specific version for easy UI tracking
         ocr_res = models.OCRResult(
             document_id=doc.id,
             model_name=f"{cfg['name']} ({cfg['version']})",
-            extracted_text=results[idx],
-            error_count=0
+            extracted_text=extracted_text,
+            error_count=0,
+            raw_json=raw_json
         )
         db.add(ocr_res)
         ocr_results.append(ocr_res)

@@ -10,6 +10,13 @@ export default function Home() {
   const [ocrResults, setOcrResults] = useState<any[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editedText, setEditedText] = useState("");
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [activeBox, setActiveBox] = useState<{x: number, y: number, w: number, h: number} | null>(null);
+  const [imgDimensions, setImgDimensions] = useState<{w: number, h: number} | null>(null);
+
+  const handleZoomIn = () => setZoomLevel((prev) => Math.min(prev + 0.25, 5));
+  const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 0.25, 0.25));
+  const handleZoomReset = () => setZoomLevel(1);
 
   const [language, setLanguage] = useState("hindi");
   const [modality, setModality] = useState("printed");
@@ -36,6 +43,9 @@ export default function Home() {
     setEditingId(null);
     setPreviewUrl(null);
     setEditedText("");
+    setZoomLevel(1);
+    setActiveBox(null);
+    setImgDimensions(null);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -83,6 +93,47 @@ export default function Home() {
       console.error("Error saving annotation:", error);
       showError("Something went wrong. Please try again.");
     }
+  };
+
+  const handleTextClick = (e: React.SyntheticEvent<HTMLTextAreaElement>, regions: any[]) => {
+    if (!regions || regions.length === 0) {
+      setActiveBox(null);
+      return;
+    }
+    
+    const target = e.target as HTMLTextAreaElement;
+    const cursor = target.selectionStart;
+    
+    // Find the word index by scanning the edited text
+    const regex = /\S+/g;
+    let match;
+    let foundIndex = -1;
+    let currentIndex = 0;
+    
+    while ((match = regex.exec(editedText)) !== null) {
+      if (cursor >= match.index && cursor <= regex.lastIndex) {
+         foundIndex = currentIndex;
+         break;
+      }
+      if (cursor < match.index && currentIndex > 0 && foundIndex === -1) {
+         foundIndex = currentIndex - 1;
+         break;
+      }
+      currentIndex++;
+    }
+    
+    if (foundIndex === -1 && currentIndex > 0) {
+      foundIndex = currentIndex - 1;
+    }
+    
+    if (foundIndex >= 0 && foundIndex < regions.length) {
+       const region = regions[foundIndex];
+       if (region && region.bounding_box) {
+          setActiveBox(region.bounding_box);
+          return;
+       }
+    }
+    setActiveBox(null);
   };
 
   return (
@@ -151,16 +202,42 @@ export default function Home() {
           {editingId ? (
             // ENHANCED PREVIEW MODE FOR EDITING SIDE-BY-SIDE
             <div className="flex flex-col h-full bg-white rounded-xl w-full">
-               <div className="flex items-center justify-between mb-4">
+               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                  <h2 className="text-xl font-bold text-gray-800">Original Document Preview</h2>
-                 <span className="text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full">Comparison Mode</span>
+                 <div className="flex items-center gap-2">
+                   <div className="flex items-center bg-gray-100 rounded-lg p-1">
+                     <button onClick={handleZoomOut} className="w-8 h-8 flex items-center justify-center hover:bg-white rounded shadow-sm transition-all text-xl font-medium text-gray-700 active:scale-90" title="Zoom Out">-</button>
+                     <span className="text-sm font-semibold px-2 min-w-[3.5rem] text-center text-gray-700">{Math.round(zoomLevel * 100)}%</span>
+                     <button onClick={handleZoomIn} className="w-8 h-8 flex items-center justify-center hover:bg-white rounded shadow-sm transition-all text-xl font-medium text-gray-700 active:scale-90" title="Zoom In">+</button>
+                     <button onClick={handleZoomReset} className="ml-1 px-3 py-1.5 text-xs hover:bg-white rounded shadow-sm transition-all text-gray-600 font-medium active:scale-95" title="Reset Zoom">Reset</button>
+                   </div>
+                   <span className="text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full hidden lg:inline-block">Comparison Mode</span>
+                 </div>
                </div>
-               {/* Make the image w-full and height adjust dynamically but scroll if it breaks boundaries */}
-               <div className="flex-1 w-full bg-gray-50 rounded-lg border border-gray-200 overflow-y-auto overflow-x-hidden flex flex-col p-2 min-h-[600px] lg:max-h-[80vh]">
+               {/* Make the image adjust dynamically but scroll if it breaks boundaries */}
+               <div className="flex-1 w-full bg-gray-50 rounded-lg border border-gray-200 overflow-auto flex p-2 min-h-[600px] lg:max-h-[80vh] items-start justify-center">
                    {file?.type === "application/pdf" ? (
-                       <object data={`${previewUrl}#navpanes=0&scrollbar=0&view=FitH`} type="application/pdf" className="w-full h-[800px] rounded"></object>
+                       <object data={`${previewUrl}#navpanes=0&scrollbar=0&view=FitH&zoom=${Math.round(zoomLevel * 100)}`} type="application/pdf" className="w-full h-[800px] rounded"></object>
                    ) : (
-                       <img src={previewUrl || ""} alt="Original Document" className="w-full h-auto rounded shadow-sm object-contain" />
+                       <div className="relative inline-block origin-top shadow-sm transition-all duration-200 ease-in-out" style={{ width: `${zoomLevel * 100}%`, maxWidth: 'none' }}>
+                           <img 
+                               src={previewUrl || ""} 
+                               alt="Original Document" 
+                               className="w-full h-auto rounded"
+                               onLoad={(e) => setImgDimensions({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+                           />
+                           {activeBox && imgDimensions && (
+                               <div 
+                                 className="absolute bg-yellow-400/10 pointer-events-none rounded transition-all duration-100 box-content p-[6px] -translate-x-[6px] -translate-y-[6px] border-[3px] border-yellow-500"
+                                 style={{
+                                   left: `${(activeBox.x / imgDimensions.w) * 100}%`,
+                                   top: `${(activeBox.y / imgDimensions.h) * 100}%`,
+                                   width: `${(activeBox.w / imgDimensions.w) * 100}%`,
+                                   height: `${(activeBox.h / imgDimensions.h) * 100}%`,
+                                 }}
+                               />
+                           )}
+                       </div>
                    )}
                </div>
             </div>
@@ -315,10 +392,12 @@ export default function Home() {
                            </span>
                          </div>
                          <textarea 
-                           title="Edit the extracted text"
-                           className="w-full flex-1 bg-[#eff6ff] text-gray-900 border border-gray-300 p-5 rounded-xl shadow-inner focus:outline-none focus:ring-2 focus:ring-[#4F46E5] focus:bg-white resize-none min-h-[400px] transition-colors text-lg"
+                           title="Edit the extracted text - Click a word to see its bounding box"
+                           className="w-full flex-1 bg-[#eff6ff] text-gray-900 border border-gray-300 p-5 rounded-xl shadow-inner focus:outline-none focus:ring-2 focus:ring-[#4F46E5] focus:bg-white resize-none min-h-[400px] transition-colors text-lg leading-relaxed cursor-text"
                            value={editedText}
                            onChange={(e) => setEditedText(e.target.value)}
+                           onClick={(e) => handleTextClick(e, result.raw_json?.regions)}
+                           onKeyUp={(e) => handleTextClick(e, result.raw_json?.regions)}
                          />
                          <div className="flex justify-end mt-5 gap-4 pt-4 border-t border-gray-100 shrink-0">
                            <button className="px-6 py-2.5 text-gray-700 bg-white hover:bg-gray-100 border border-gray-300 rounded-lg transition-colors font-semibold shadow-sm hover:shadow cursor-pointer" onClick={() => setEditingId(null)}>

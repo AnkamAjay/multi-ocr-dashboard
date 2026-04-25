@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, JSON
 from sqlalchemy.orm import relationship
 import datetime
 from database import Base
@@ -21,6 +21,7 @@ class OCRResult(Base):
     extracted_text = Column(Text)
     corrected_text = Column(Text, nullable=True)
     error_count = Column(Integer, default=0)
+    raw_json = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     document = relationship("Document", back_populates="ocr_results")
