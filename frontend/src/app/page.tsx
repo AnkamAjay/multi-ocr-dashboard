@@ -1,13 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { uploadDocument, processDocument, saveAnnotation } from "../services/api";
+import { uploadDocument, processDocument, saveAnnotation, getResults } from "../services/api";
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
-  const [documentId, setDocumentId] = useState<number | null>(null);
+
+  // ── Batch state (works for both single and ZIP uploads) ──
+  const [batchDocIds, setBatchDocIds] = useState<number[]>([]);
+  const [batchFilePaths, setBatchFilePaths] = useState<string[]>([]);
+  const [batchFilenames, setBatchFilenames] = useState<string[]>([]);
+  const [activeDocIndex, setActiveDocIndex] = useState(0);
+  const [isBatch, setIsBatch] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{done: number, total: number} | null>(null);
+
+  // Active document helpers
+  const activeDocId = batchDocIds[activeDocIndex] ?? null;
+  const previewUrl = batchFilePaths[activeDocIndex] ?? null;
+
   const [loading, setLoading] = useState(false);
-  const [ocrResults, setOcrResults] = useState<any[]>([]);
+  // batchResults stores OCR results for every document by its ID
+  const [batchResults, setBatchResults] = useState<Record<number, any[]>>({});
+  // Derived: results for the currently viewed document
+  const ocrResults: any[] = activeDocId ? (batchResults[activeDocId] ?? []) : [];
+
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editedText, setEditedText] = useState("");
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -20,7 +36,6 @@ export default function Home() {
 
   const [language, setLanguage] = useState("hindi");
   const [modality, setModality] = useState("printed");
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -38,10 +53,14 @@ export default function Home() {
 
   const handleReset = () => {
     setFile(null);
-    setDocumentId(null);
-    setOcrResults([]);
+    setBatchDocIds([]);
+    setBatchFilePaths([]);
+    setBatchFilenames([]);
+    setActiveDocIndex(0);
+    setIsBatch(false);
+    setBatchProgress(null);
+    setBatchResults({});
     setEditingId(null);
-    setPreviewUrl(null);
     setEditedText("");
     setZoomLevel(1);
     setActiveBox(null);
@@ -52,7 +71,30 @@ export default function Home() {
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
       setFile(selectedFile);
-      setPreviewUrl(URL.createObjectURL(selectedFile));
+      // Reset batch state on new file selection
+      setBatchDocIds([]);
+      setBatchFilePaths([]);
+      setBatchFilenames([]);
+      setActiveDocIndex(0);
+    }
+  };
+
+  const handleSelectDocument = async (index: number) => {
+    const docId = batchDocIds[index];
+    setActiveDocIndex(index);
+    setEditingId(null);
+    setActiveBox(null);
+    
+    // If we don't have results for this document yet, try fetching them from the backend
+    if (docId && (!batchResults[docId] || batchResults[docId].length === 0)) {
+      try {
+        const data = await getResults(docId);
+        if (data.ocr_results) {
+          setBatchResults(prev => ({ ...prev, [docId]: data.ocr_results }));
+        }
+      } catch (err) {
+        console.error("Failed to fetch results for document:", err);
+      }
     }
   };
 
@@ -64,15 +106,36 @@ export default function Home() {
     setLoading(true);
     setErrorMessage(null);
     setSuccessMessage(null);
+    setBatchResults({});
+    setBatchProgress(null);
     try {
-      // 1. Upload
-      const docData = await uploadDocument(file);
-      setDocumentId(docData.id);
+      // 1. Upload (handles both single files and ZIPs)
+      const batchData = await uploadDocument(file);
+      
+      // Atomic state update for the new batch
+      setBatchDocIds(batchData.document_ids);
+      setBatchFilePaths(batchData.file_paths);
+      setBatchFilenames(batchData.filenames);
+      setIsBatch(batchData.is_batch);
+      setActiveDocIndex(0);
 
-      // 2. Process
-      const results = await processDocument(docData.id, language, modality);
-      setOcrResults(results);
-      showSuccess("Document processed successfully ✅");
+      const total = batchData.document_ids.length;
+      setBatchProgress({ done: 0, total });
+
+      // 2. Process ALL documents sequentially, storing results per doc ID
+      for (let i = 0; i < total; i++) {
+        const docId = batchData.document_ids[i];
+        const results = await processDocument(docId, language, modality);
+        // Store results in the map immediately so user can see them as they complete
+        setBatchResults(prev => ({ ...prev, [docId]: results }));
+        setBatchProgress({ done: i + 1, total });
+      }
+
+      if (batchData.is_batch) {
+        showSuccess(`All ${total} documents processed successfully ✅`);
+      } else {
+        showSuccess("Document processed successfully ✅");
+      }
     } catch (error) {
       console.error("Error processing document:", error);
       showError("Something went wrong. Please try again.");
@@ -84,9 +147,14 @@ export default function Home() {
   const handleSaveEdit = async (resultId: number) => {
     try {
       await saveAnnotation(resultId, editedText);
-      setOcrResults((prev) => 
-        prev.map((res) => res.id === resultId ? { ...res, corrected_text: editedText } : res)
-      );
+      if (activeDocId) {
+        setBatchResults(prev => ({
+          ...prev,
+          [activeDocId]: (prev[activeDocId] ?? []).map((res: any) =>
+            res.id === resultId ? { ...res, corrected_text: editedText } : res
+          )
+        }));
+      }
       setEditingId(null);
       showSuccess("Changes saved successfully ✅");
     } catch (error) {
@@ -292,31 +360,58 @@ export default function Home() {
                 </div>
                 
                 {file ? (
-                  <div className="flex flex-col flex-1 border border-gray-300 bg-white shadow-sm rounded-xl p-3">
-                    {previewUrl && (
-                      <div className="flex-1 w-full bg-gray-50 rounded-lg border border-gray-200 overflow-hidden mb-3 flex items-center justify-center min-h-[200px]">
-                         {file.type === "application/pdf" ? (
-                             <object data={`${previewUrl}#navpanes=0&scrollbar=0&view=FitH`} type="application/pdf" className="w-full h-full rounded"></object>
-                         ) : (
-                             <img src={previewUrl} alt="Preview" className="max-w-full max-h-[300px] object-contain rounded" />
-                         )}
-                      </div>
-                    )}
-                    <div className="flex items-center justify-center text-sm bg-blue-50 py-2 rounded">
-                      <p className="text-[#4F46E5] font-semibold truncate max-w-[90%]" title={file.name}>📄 {file.name}</p>
-                    </div>
-                  </div>
-                ) : (
-                  <label 
-                    title="Upload your document to extract text"
-                    className="flex-1 border-2 border-dashed border-[#A78BFA] rounded-xl flex flex-col items-center justify-center bg-[#eff6ff] hover:bg-blue-100 hover:border-[#4F46E5] transition-colors cursor-pointer p-8 min-h-[200px]"
-                  >
-                    <input type="file" className="hidden" accept=".jpg,.png,.pdf" onChange={handleFileChange} />
-                    <span className="text-4xl mb-3">📄</span>
-                    <p className="text-base font-semibold text-[#4F46E5]">Upload your document</p>
-                    <p className="text-sm text-gray-500 mt-1">(JPG, PNG, PDF)</p>
-                  </label>
-                )}
+                   <div className="flex flex-col flex-1 border border-gray-300 bg-white shadow-sm rounded-xl p-3 gap-2">
+                     {/* Batch Thumbnail Sidebar */}
+                     {isBatch && batchFilenames.length > 0 ? (
+                       <div className="flex flex-col gap-1 max-h-[280px] overflow-y-auto">
+                         <p className="text-xs font-semibold text-gray-500 mb-1">📦 {batchFilenames.length} files extracted from ZIP</p>
+                         {batchFilenames.map((fname, idx) => (
+                           <button
+                             key={idx}
+                             onClick={() => handleSelectDocument(idx)}
+                             className={`text-left text-xs px-3 py-2 rounded-lg border transition-all truncate ${
+                               idx === activeDocIndex
+                                 ? 'bg-[#4F46E5] text-white border-[#4F46E5] font-semibold'
+                                 : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-blue-50 hover:border-[#4F46E5]'
+                             }`}
+                             title={fname}
+                           >
+                             📄 {fname}
+                           </button>
+                         ))}
+                       </div>
+                     ) : (
+                       <div className="flex items-center justify-center text-sm bg-blue-50 py-2 rounded">
+                         <p className="text-[#4F46E5] font-semibold truncate max-w-[90%]" title={file.name}>📄 {file.name}</p>
+                       </div>
+                     )}
+                     {/* Batch progress bar */}
+                     {batchProgress && batchProgress.total > 1 && (
+                       <div className="mt-1">
+                         <div className="flex justify-between text-xs text-gray-500 mb-1">
+                           <span>Processing batch...</span>
+                           <span>{batchProgress.done}/{batchProgress.total}</span>
+                         </div>
+                         <div className="w-full bg-gray-200 rounded-full h-2">
+                           <div
+                             className="bg-[#4F46E5] h-2 rounded-full transition-all duration-500"
+                             style={{ width: `${(batchProgress.done / batchProgress.total) * 100}%` }}
+                           />
+                         </div>
+                       </div>
+                     )}
+                   </div>
+                 ) : (
+                   <label
+                     title="Upload your document to extract text"
+                     className="flex-1 border-2 border-dashed border-[#A78BFA] rounded-xl flex flex-col items-center justify-center bg-[#eff6ff] hover:bg-blue-100 hover:border-[#4F46E5] transition-colors cursor-pointer p-8 min-h-[200px]"
+                   >
+                     <input type="file" className="hidden" accept=".jpg,.jpeg,.png,.pdf,.zip" onChange={handleFileChange} />
+                     <span className="text-4xl mb-3">📄</span>
+                     <p className="text-base font-semibold text-[#4F46E5]">Upload your document</p>
+                     <p className="text-sm text-gray-500 mt-1">(JPG, PNG, PDF or ZIP batch)</p>
+                   </label>
+                 )}
               </div>
               
               <button 
@@ -330,7 +425,7 @@ export default function Home() {
                 {loading ? (
                   <>
                     <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    Processing... Please wait
+                    {batchProgress ? `Processing ${batchProgress.done}/${batchProgress.total}...` : 'Uploading...'}
                   </>
                 ) : (
                   <>⚙️ Generate OCR Results</>

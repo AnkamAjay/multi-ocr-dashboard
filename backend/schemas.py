@@ -42,3 +42,10 @@ class DocumentResponse(DocumentBase):
 
     class Config:
         from_attributes = True
+
+class BatchUploadResponse(BaseModel):
+    """Returned by the /upload endpoint for both single files and ZIP batches."""
+    document_ids: List[int]
+    file_paths: List[str]
+    filenames: List[str]
+    is_batch: bool = False
