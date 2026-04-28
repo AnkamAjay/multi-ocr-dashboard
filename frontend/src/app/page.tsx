@@ -283,15 +283,16 @@ export default function Home() {
                  </div>
                </div>
                {/* Make the image adjust dynamically but scroll if it breaks boundaries */}
-               <div className="flex-1 w-full bg-gray-50 rounded-lg border border-gray-200 overflow-auto flex p-2 min-h-[600px] lg:max-h-[80vh] items-start justify-center">
+               <div className="flex-1 w-full bg-gray-50 rounded-lg border border-gray-200 overflow-auto p-2 min-h-[600px] lg:max-h-[80vh]">
                    {file?.type === "application/pdf" ? (
                        <object data={`${previewUrl}#navpanes=0&scrollbar=0&view=FitH&zoom=${Math.round(zoomLevel * 100)}`} type="application/pdf" className="w-full h-[800px] rounded"></object>
                    ) : (
-                       <div className="relative inline-block origin-top shadow-sm transition-all duration-200 ease-in-out" style={{ width: `${zoomLevel * 100}%`, maxWidth: 'none' }}>
+                       <div className="relative inline-block origin-top-left" style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'top left' }}>
                            <img 
                                src={previewUrl || ""} 
                                alt="Original Document" 
-                               className="w-full h-auto rounded"
+                               className="rounded shadow-md max-w-none"
+                               style={{ imageRendering: 'auto' }}
                                onLoad={(e) => setImgDimensions({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
                            />
                            {activeBox && imgDimensions && (
