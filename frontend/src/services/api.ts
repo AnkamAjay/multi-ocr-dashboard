@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { BBox } from '../components/BboxCanvas';
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
 
@@ -7,6 +8,8 @@ export interface BatchUploadResponse {
     file_paths: string[];
     filenames: string[];
     is_batch: boolean;
+    is_cached: boolean;
+    cached_corrected_json?: BBox[] | null;
 }
 
 export const uploadDocument = async (file: File): Promise<BatchUploadResponse> => {
@@ -27,6 +30,18 @@ export const saveAnnotation = async (ocrResultId: number, editedText: string) =>
     const response = await axios.post(`${API_BASE_URL}/save?ocr_result_id=${ocrResultId}`, {
         edited_text: editedText
     });
+    return response.data;
+};
+
+export const saveBboxCorrections = async (
+    documentId: number,
+    correctedJson: BBox[],
+    correctedText: string
+) => {
+    const response = await axios.post(
+        `${API_BASE_URL}/save-corrections?document_id=${documentId}`,
+        { corrected_json: correctedJson, corrected_text: correctedText }
+    );
     return response.data;
 };
 

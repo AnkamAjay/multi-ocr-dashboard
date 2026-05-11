@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException # type: ignore
+from sqlalchemy.orm import Session # type: ignore
 from typing import List
-import httpx
+import httpx # type: ignore
 import asyncio
 
-import models, schemas
-from database import get_db
+import models, schemas # type: ignore
+from database import get_db # type: ignore
 
 router = APIRouter()
 
@@ -14,7 +14,7 @@ async def run_page_ocr(file_path: str, language: str, version: str, modality: st
     url = "https://ilocr.iiit.ac.in/pageocr/api"
     try:
         import os
-        import fitz  # PyMuPDF
+        import fitz  # type: ignore
         
         filename = os.path.basename(file_path)
         upload_path = file_path
@@ -81,7 +81,7 @@ async def process_document(document_id: int, language: str = "english", modality
     configs = []
     if modality.lower() == "printed":
         configs = [
-            {"name": "Printed_V1", "version": "V-02.01.00.01", "layout": "v2_doctr"},
+            {"name": "Printed_V1", "version": "V-01.10.01.02", "layout": "v2_doctr"},
             {"name": "Printed_V2", "version": "V-01.10.01.03", "layout": "v2_doctr"},
             {"name": "Printed_V3", "version": "V-01.10.01.04", "layout": "v2_doctr"},
         ]
@@ -149,6 +149,34 @@ def save_annotation(ocr_result_id: int, annotation: schemas.AnnotationCreate, db
     db.refresh(new_ann)
 
     return new_ann
+
+
+@router.post("/save-corrections")
+def save_bbox_corrections(
+    document_id: int,
+    corrections: schemas.SaveCorrectionsRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Save the Gold Standard bbox+text corrections for a document.
+    This is the document-level truth — not tied to any specific OCR model.
+    Called when the user clicks 'Save Corrections' after bbox CRUD editing.
+    """
+    doc = db.query(models.Document).filter(models.Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    doc.corrected_json = corrections.corrected_json
+    doc.is_corrected = True
+    db.commit()
+
+    return {
+        "status": "saved",
+        "document_id": document_id,
+        "bbox_count": len(corrections.corrected_json),
+        "corrected_text_length": len(corrections.corrected_text),
+    }
+
 
 @router.get("/best-model/{document_id}")
 def get_best_model(document_id: int, db: Session = Depends(get_db)):

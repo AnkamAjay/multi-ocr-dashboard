@@ -38,6 +38,10 @@ class DocumentBase(BaseModel):
 class DocumentResponse(DocumentBase):
     id: int
     uploaded_at: datetime
+    # Gold Standard correction fields
+    file_hash: Optional[str] = None
+    corrected_json: Optional[Any] = None
+    is_corrected: bool = False
     ocr_results: List[OCRResultResponse] = []
 
     class Config:
@@ -49,3 +53,11 @@ class BatchUploadResponse(BaseModel):
     file_paths: List[str]
     filenames: List[str]
     is_batch: bool = False
+    # Cache-hit fields — populated when the same file has been corrected before
+    is_cached: bool = False
+    cached_corrected_json: Optional[Any] = None
+
+class SaveCorrectionsRequest(BaseModel):
+    """Payload for POST /save-corrections — stores the Gold Standard bbox+text list."""
+    corrected_json: List[Any]      # List of BBox dicts: {id, x, y, w, h, text, status}
+    corrected_text: str            # Full concatenated text (for search/display convenience)

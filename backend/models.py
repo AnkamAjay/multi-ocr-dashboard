@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, JSON
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, JSON, Boolean
 from sqlalchemy.orm import relationship
 import datetime
 from database import Base
@@ -9,6 +9,11 @@ class Document(Base):
     id = Column(Integer, primary_key=True, index=True)
     file_path = Column(String, index=True)
     uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    # Gold Standard correction columns
+    file_hash = Column(String, nullable=True, index=True)       # SHA-256 of file bytes — enables re-upload detection
+    corrected_json = Column(JSON, nullable=True)                # Final bbox+text list (the human-verified Gold Standard)
+    is_corrected = Column(Boolean, default=False)               # True after the first "Save Corrections"
 
     ocr_results = relationship("OCRResult", back_populates="document")
 
