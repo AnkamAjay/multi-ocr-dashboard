@@ -341,7 +341,7 @@ export default function Home() {
     if (validBboxes.length === 0) return "";
     
     // We can reuse the same sorting logic
-    const sortedLines = [];
+    const sortedLines: BBox[][] = [];
     const sortedByY = [...validBboxes].sort((a, b) => a.y - b.y);
 
     sortedByY.forEach(box => {
@@ -394,6 +394,66 @@ export default function Home() {
       showError("Failed to save corrections.");
     }
   };
+
+  useEffect(() => {
+    // Only bind shortcuts when editingId is not null, since shortcuts only apply to annotation interface
+    if (editingId === null) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 1. Check if user is typing in an input field
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+
+      // 2. Handle Ctrl+S globally (prevent browser save)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        handleSaveCorrections();
+        return;
+      }
+
+      // 3. Handle Ctrl+Z
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        if (!isInput) {
+          e.preventDefault();
+          handleUndo();
+        }
+        return;
+      }
+
+      // 4. Ignore other shortcuts if typing
+      if (isInput) return;
+
+      switch (e.key.toLowerCase()) {
+        case 'v':
+          setToolMode('select');
+          break;
+        case 'd':
+          setToolMode('draw');
+          break;
+        case 'delete':
+        case 'backspace':
+          handleDeleteBbox();
+          break;
+        case 'm':
+          handleMergeBbox();
+          break;
+        case '+':
+        case '=':
+          handleZoomIn();
+          break;
+        case '-':
+        case '_':
+          handleZoomOut();
+          break;
+        case '0':
+          handleZoomReset();
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  });
 
   const primaryResult = ocrResults.find(r => r.id === primaryResultId) || ocrResults[0];
 
