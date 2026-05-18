@@ -61,3 +61,67 @@ class SaveCorrectionsRequest(BaseModel):
     """Payload for POST /save-corrections — stores the Gold Standard bbox+text list."""
     corrected_json: List[Any]      # List of BBox dicts: {id, x, y, w, h, text, status}
     corrected_text: str            # Full concatenated text (for search/display convenience)
+
+class AnnotationLogBase(BaseModel):
+    action_type: str
+    previous_value: Optional[str] = None
+    updated_value: Optional[str] = None
+    timestamp: datetime
+
+class AnnotationLogCreate(BaseModel):
+    action_type: str
+    previous_value: Optional[str] = None
+    updated_value: Optional[str] = None
+    timestamp: Optional[datetime] = None
+
+class AnnotationLogResponse(AnnotationLogBase):
+    log_id: int
+    document_id: int
+
+    class Config:
+        from_attributes = True
+
+class PageCorrectionBase(BaseModel):
+    page_number: int
+    bbox_deleted: int
+    bbox_created: int
+    bbox_edited: int
+    text_edited: int
+    total_corrections: int
+    time_spent: float
+
+class PageCorrectionCreate(PageCorrectionBase):
+    pass
+
+class PageCorrectionResponse(PageCorrectionBase):
+    id: int
+    document_id: int
+
+    class Config:
+        from_attributes = True
+
+class AnnotationSummaryBase(BaseModel):
+    total_pages_corrected: int
+    bbox_deleted: int
+    bbox_created: int
+    bbox_edited: int
+    text_edited: int
+    total_corrections: int
+    total_time_spent: float
+
+class AnnotationSummaryResponse(AnnotationSummaryBase):
+    id: int
+    document_id: int
+
+    class Config:
+        from_attributes = True
+
+class StatisticsUpdateRequest(BaseModel):
+    document_id: int
+    page_number: int
+    bbox_deleted: int
+    bbox_created: int
+    bbox_edited: int
+    text_edited: int
+    time_spent: float
+    logs: List[AnnotationLogCreate]

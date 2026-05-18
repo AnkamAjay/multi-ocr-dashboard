@@ -6,8 +6,11 @@ import {
   processDocument, 
   saveAnnotation, 
   saveBboxCorrections, 
-  getResults 
+  getResults,
+  saveStatistics,
+  AnnotationLogCreate
 } from "../services/api";
+import Link from "next/link";
 import BboxCanvas, { BBox, BBoxStatus } from "../components/BboxCanvas";
 import BboxToolbar from "../components/BboxToolbar";
 import CompareModal from "../components/CompareModal";
@@ -46,6 +49,10 @@ export default function Home() {
   const [toolMode, setToolMode] = useState<"select" | "draw">("select");
   const [bboxHistory, setBboxHistory] = useState<BBox[][]>([]);
   const [miniEditorText, setMiniEditorText] = useState("");
+
+  // ── Statistics Tracking State ──
+  const [initialBboxList, setInitialBboxList] = useState<BBox[]>([]);
+  const [editStartTime, setEditStartTime] = useState<number | null>(null);
 
   const handleZoomIn = () => setZoomLevel((prev) => Math.min(prev + 0.25, 5));
   const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 0.25, 0.25));
@@ -87,6 +94,8 @@ export default function Home() {
     setSelectedBboxIds([]);
     setBboxHistory([]);
     setMiniEditorText("");
+    setInitialBboxList([]);
+    setEditStartTime(null);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -121,6 +130,8 @@ export default function Home() {
            setEditingId(-1);
            setPrimaryResultId(-1);
            setEditedText(data.corrected_json.map((b: BBox) => b.text).join('\n'));
+           setInitialBboxList(data.corrected_json);
+           setEditStartTime(Date.now());
         }
       } catch (err) {
         console.error("Failed to fetch results:", err);
@@ -168,6 +179,8 @@ export default function Home() {
         setEditingId(-1); // Indicates cached doc editing
         setPrimaryResultId(-1);
         setEditedText(batchData.cached_corrected_json.map((b: BBox) => b.text).join('\n'));
+        setInitialBboxList(batchData.cached_corrected_json);
+        setEditStartTime(Date.now());
         showSuccess("✅ Previous corrections loaded. No OCR needed.");
         setLoading(false);
         return;
@@ -230,6 +243,8 @@ export default function Home() {
     setEditedText(result.corrected_text || result.extracted_text);
     setSelectedBboxIds([]);
     setMiniEditorText("");
+    setInitialBboxList(bboxes);
+    setEditStartTime(Date.now());
   };
 
   // ── BBox Handlers ──
@@ -386,9 +401,92 @@ export default function Home() {
         await saveAnnotation(editingId, fullText);
       }
       
-      showSuccess("Gold Standard corrections saved ✅");
+      // ── Calculate Statistics via Diffing ──
+      let bbox_created = 0;
+      let bbox_deleted = 0;
+      let bbox_edited = 0;
+      let text_edited = 0;
+      const logs: AnnotationLogCreate[] = [];
+      const nowStr = new Date().toISOString();
+
+      const finalMap = new Map<string, BBox>();
+      bboxList.forEach(b => finalMap.set(b.id, b));
+
+      // 1. Check initial bboxes for deletions and modifications
+      initialBboxList.forEach(initBox => {
+        const finalBox = finalMap.get(initBox.id);
+        if (!finalBox || finalBox.status === 'deleted') {
+          bbox_deleted += 1;
+          logs.push({
+            action_type: "Delete Bounding Box",
+            previous_value: `x:${Math.round(initBox.x)}, y:${Math.round(initBox.y)}, w:${Math.round(initBox.w)}, h:${Math.round(initBox.h)}`,
+            updated_value: "Deleted",
+            timestamp: nowStr
+          });
+        } else {
+          // Check position edit
+          const isPosChanged = Math.abs(initBox.x - finalBox.x) > 2 || 
+                               Math.abs(initBox.y - finalBox.y) > 2 || 
+                               Math.abs(initBox.w - finalBox.w) > 2 || 
+                               Math.abs(initBox.h - finalBox.h) > 2;
+          if (isPosChanged) {
+            bbox_edited += 1;
+            logs.push({
+              action_type: "Edit Bounding Box",
+              previous_value: `x:${Math.round(initBox.x)}, y:${Math.round(initBox.y)}, w:${Math.round(initBox.w)}, h:${Math.round(initBox.h)}`,
+              updated_value: `x:${Math.round(finalBox.x)}, y:${Math.round(finalBox.y)}, w:${Math.round(finalBox.w)}, h:${Math.round(finalBox.h)}`,
+              timestamp: nowStr
+            });
+          }
+          // Check text edit
+          if (initBox.text !== finalBox.text) {
+            text_edited += 1;
+            logs.push({
+              action_type: "Edit Text",
+              previous_value: initBox.text || "[Empty]",
+              updated_value: finalBox.text || "[Empty]",
+              timestamp: nowStr
+            });
+          }
+        }
+      });
+
+      // 2. Check for creations (newly added bboxes)
+      const initialMapCheck = new Map<string, BBox>();
+      initialBboxList.forEach(b => initialMapCheck.set(b.id, b));
+
+      bboxList.forEach(finalBox => {
+        if (finalBox.status !== 'deleted' && !initialMapCheck.has(finalBox.id)) {
+          bbox_created += 1;
+          logs.push({
+            action_type: "Create Bounding Box",
+            previous_value: "None",
+            updated_value: `x:${Math.round(finalBox.x)}, y:${Math.round(finalBox.y)}, w:${Math.round(finalBox.w)}, h:${Math.round(finalBox.h)}`,
+            timestamp: nowStr
+          });
+        }
+      });
+
+      const timeSpent = editStartTime ? parseFloat(((Date.now() - editStartTime) / 60000).toFixed(2)) : 0.1;
+
+      const statsPayload = {
+        document_id: batchDocIds[0] || activeDocId || 1,
+        page_number: activeDocIndex + 1,
+        bbox_deleted,
+        bbox_created,
+        bbox_edited,
+        text_edited,
+        time_spent: timeSpent,
+        logs
+      };
+
+      await saveStatistics(statsPayload);
+      
+      setInitialBboxList(finalBboxes);
+      setEditStartTime(Date.now());
+
+      showSuccess("Gold Standard corrections & statistics saved ✅");
       setEditedText(fullText);
-      // Optional: setEditingId(null) if we want to exit edit mode
     } catch (error) {
       console.error("Error saving corrections:", error);
       showError("Failed to save corrections.");
@@ -478,6 +576,12 @@ export default function Home() {
           <p className="text-gray-500 mt-1">Upload document and create Gold Standard corrections</p>
         </div>
         <div className="flex gap-3 mt-4 md:mt-0">
+          <Link 
+            href="/statistics"
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 rounded-lg shadow-sm transition-colors cursor-pointer font-bold"
+          >
+            📊 My Statistics
+          </Link>
           <button 
             onClick={() => setIsHelpOpen(true)}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg shadow-sm transition-colors cursor-pointer"

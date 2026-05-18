@@ -27,10 +27,11 @@ app.add_middleware(
 # Serve uploaded files as static assets so frontend can load images via URL
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
-from routers import documents, ocr
+from routers import documents, ocr, statistics
 
 app.include_router(documents.router, prefix="/api", tags=["Documents"])
 app.include_router(ocr.router, prefix="/api", tags=["OCR"])
+app.include_router(statistics.router, prefix="/api", tags=["Statistics"])
 
 @app.get("/")
 def read_root():

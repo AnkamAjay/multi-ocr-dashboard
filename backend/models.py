@@ -41,3 +41,39 @@ class Annotation(Base):
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
 
     ocr_result = relationship("OCRResult", back_populates="annotations")
+
+class AnnotationSummary(Base):
+    __tablename__ = "annotation_summary"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, index=True)
+    total_pages_corrected = Column(Integer, default=0)
+    bbox_deleted = Column(Integer, default=0)
+    bbox_created = Column(Integer, default=0)
+    bbox_edited = Column(Integer, default=0)
+    text_edited = Column(Integer, default=0)
+    total_corrections = Column(Integer, default=0)
+    total_time_spent = Column(Float, default=0.0)
+
+class PageCorrection(Base):
+    __tablename__ = "page_corrections"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, index=True)
+    page_number = Column(Integer, default=1)
+    bbox_deleted = Column(Integer, default=0)
+    bbox_created = Column(Integer, default=0)
+    bbox_edited = Column(Integer, default=0)
+    text_edited = Column(Integer, default=0)
+    total_corrections = Column(Integer, default=0)
+    time_spent = Column(Float, default=0.0)
+
+class AnnotationLog(Base):
+    __tablename__ = "annotation_logs"
+
+    log_id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, index=True)
+    action_type = Column(String)
+    previous_value = Column(String, nullable=True)
+    updated_value = Column(String, nullable=True)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)

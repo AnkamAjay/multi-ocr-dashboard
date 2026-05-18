@@ -54,3 +54,41 @@ export const getResults = async (documentId: number) => {
     const response = await axios.get(`${API_BASE_URL}/results/${documentId}`);
     return response.data;
 };
+
+export interface AnnotationLogCreate {
+    action_type: string;
+    previous_value?: string;
+    updated_value?: string;
+    timestamp?: string;
+}
+
+export interface StatisticsUpdateRequest {
+    document_id: number;
+    page_number: number;
+    bbox_deleted: number;
+    bbox_created: number;
+    bbox_edited: number;
+    text_edited: number;
+    time_spent: number;
+    logs: AnnotationLogCreate[];
+}
+
+export const saveStatistics = async (data: StatisticsUpdateRequest) => {
+    const response = await axios.post(`${API_BASE_URL}/statistics/update`, data);
+    return response.data;
+};
+
+export const getStatisticsSummary = async () => {
+    const response = await axios.get(`${API_BASE_URL}/statistics/summary`);
+    return response.data;
+};
+
+export const getStatisticsPages = async () => {
+    const response = await axios.get(`${API_BASE_URL}/statistics/pages`);
+    return response.data;
+};
+
+export const getStatisticsLogs = async () => {
+    const response = await axios.get(`${API_BASE_URL}/statistics/logs`);
+    return response.data;
+};
