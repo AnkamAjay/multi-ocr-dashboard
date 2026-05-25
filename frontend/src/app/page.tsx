@@ -14,6 +14,14 @@ import Link from "next/link";
 import BboxCanvas, { BBox, BBoxStatus } from "../components/BboxCanvas";
 import BboxToolbar from "../components/BboxToolbar";
 import CompareModal from "../components/CompareModal";
+import { ReactTransliterate } from "react-transliterate";
+import "react-transliterate/dist/index.css";
+
+const getTransliterateLang = (lang: string) => {
+  if (lang === "hindi") return "hi";
+  if (lang === "telugu") return "te";
+  return "en";
+};
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
@@ -27,7 +35,7 @@ export default function Home() {
   const [batchProgress, setBatchProgress] = useState<{done: number, total: number} | null>(null);
 
   const activeDocId = batchDocIds[activeDocIndex] ?? null;
-  const previewUrl = batchFilePaths[activeDocIndex] ?? null;
+  const previewUrl = batchFilePaths[activeDocIndex] ? `${batchFilePaths[activeDocIndex]}?v=${activeDocId}` : null;
 
   const [loading, setLoading] = useState(false);
   const [batchResults, setBatchResults] = useState<Record<number, any[]>>({});
@@ -97,6 +105,83 @@ export default function Home() {
     setInitialBboxList([]);
     setEditStartTime(null);
   };
+
+  // Sync state to localStorage
+  useEffect(() => {
+    if (batchDocIds.length > 0) {
+      localStorage.setItem('batchDocIds', JSON.stringify(batchDocIds));
+      localStorage.setItem('batchFilePaths', JSON.stringify(batchFilePaths));
+      localStorage.setItem('batchFilenames', JSON.stringify(batchFilenames));
+      localStorage.setItem('activeDocIndex', activeDocIndex.toString());
+      localStorage.setItem('isBatch', isBatch.toString());
+      if (file) {
+        localStorage.setItem('file_name', file.name);
+        localStorage.setItem('file_type', file.type);
+      }
+    } else {
+      localStorage.removeItem('batchDocIds');
+      localStorage.removeItem('batchFilePaths');
+      localStorage.removeItem('batchFilenames');
+      localStorage.removeItem('activeDocIndex');
+      localStorage.removeItem('isBatch');
+      localStorage.removeItem('file_name');
+      localStorage.removeItem('file_type');
+    }
+  }, [batchDocIds, batchFilePaths, batchFilenames, activeDocIndex, isBatch, file]);
+
+  // Restore state from localStorage on mount
+  useEffect(() => {
+    const savedBatchDocIds = localStorage.getItem('batchDocIds');
+    if (savedBatchDocIds) {
+      try {
+        const docIds = JSON.parse(savedBatchDocIds);
+        if (docIds && docIds.length > 0) {
+          const filePaths = JSON.parse(localStorage.getItem('batchFilePaths') || '[]');
+          const filenames = JSON.parse(localStorage.getItem('batchFilenames') || '[]');
+          const docIndex = parseInt(localStorage.getItem('activeDocIndex') || '0', 10);
+          const batch = localStorage.getItem('isBatch') === 'true';
+          const fname = localStorage.getItem('file_name') || '';
+          const ftype = localStorage.getItem('file_type') || '';
+          
+          setBatchDocIds(docIds);
+          setBatchFilePaths(filePaths);
+          setBatchFilenames(filenames);
+          setActiveDocIndex(docIndex);
+          setIsBatch(batch);
+          if (fname) {
+            setFile({ name: fname, type: ftype } as any);
+          }
+          
+          // Fetch results to rebuild session state
+          docIds.forEach(async (id: number) => {
+            try {
+              const res = await getResults(id);
+              if (res.ocr_results && res.ocr_results.length > 0) {
+                setBatchResults(prev => ({ ...prev, [id]: res.ocr_results }));
+                if (id === docIds[docIndex]) {
+                  const wordCount = (t: string) => (t || "").trim().split(/\s+/).filter(Boolean).length;
+                  const best = res.ocr_results.reduce((b: any, c: any) => 
+                    wordCount(c.extracted_text) > wordCount(b.extracted_text) ? c : b
+                  , res.ocr_results[0]);
+                  setPrimaryResultId(best.id);
+                }
+              }
+              if (id === docIds[docIndex] && res.is_corrected && res.corrected_json) {
+                setCachedCorrectionsForDoc(res.corrected_json);
+                setBboxList(res.corrected_json);
+                setInitialBboxList(res.corrected_json);
+                setEditedText(res.corrected_json.map((b: BBox) => b.text).join('\n'));
+              }
+            } catch (err) {
+              console.error("Failed to restore batch doc results:", err);
+            }
+          });
+        }
+      } catch (e) {
+        console.error("Error parsing localStorage state:", e);
+      }
+    }
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -730,12 +815,27 @@ export default function Home() {
                  {selectedBboxIds.length === 1 && (
                    <div className="mb-4 bg-indigo-50 border border-indigo-200 p-3 rounded-lg shrink-0 shadow-sm">
                      <label className="text-xs font-bold text-indigo-700 mb-1 block uppercase tracking-wider">Edit Selected Region</label>
-                     <textarea 
-                       className="w-full bg-white border border-indigo-200 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none h-16"
-                       value={miniEditorText}
-                       onChange={(e) => handleMiniEditorChange(e.target.value)}
-                       placeholder="Text for the selected bounding box..."
-                     />
+                     {language === "english" ? (
+                       <textarea 
+                         className="w-full bg-white border border-indigo-200 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none h-16"
+                         value={miniEditorText}
+                         onChange={(e) => handleMiniEditorChange(e.target.value)}
+                         placeholder="Text for the selected bounding box..."
+                       />
+                     ) : (
+                       <ReactTransliterate
+                         value={miniEditorText}
+                         onChangeText={(text) => handleMiniEditorChange(text)}
+                         lang={getTransliterateLang(language)}
+                         renderComponent={(props) => (
+                           <textarea 
+                             {...props}
+                             className="w-full bg-white border border-indigo-200 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none h-16"
+                             placeholder="Text for the selected bounding box..."
+                           />
+                         )}
+                       />
+                     )}
                    </div>
                  )}
 

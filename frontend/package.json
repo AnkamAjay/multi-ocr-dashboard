@@ -14,7 +14,8 @@
     "next": "16.2.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "react-konva": "^19.2.4"
+    "react-konva": "^19.2.4",
+    "react-transliterate": "^1.1.9"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
