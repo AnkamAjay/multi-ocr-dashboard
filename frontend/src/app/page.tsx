@@ -11,6 +11,7 @@ import {
   AnnotationLogCreate
 } from "../services/api";
 import Link from "next/link";
+import { useAuth } from "../context/AuthContext";
 import BboxCanvas, { BBox, BBoxStatus } from "../components/BboxCanvas";
 import BboxToolbar from "../components/BboxToolbar";
 import CompareModal from "../components/CompareModal";
@@ -24,6 +25,7 @@ const getTransliterateLang = (lang: string) => {
 };
 
 export default function Home() {
+  const { user, logout } = useAuth();
   const [file, setFile] = useState<File | null>(null);
 
   // ── Batch state ──
@@ -228,10 +230,8 @@ export default function Home() {
 
   const autoSelectBestModel = (results: any[]) => {
     if (!results || results.length === 0) return;
-    const wordCount = (t: string) => (t || "").trim().split(/\s+/).filter(Boolean).length;
-    const best = results.reduce((b, c) => 
-      wordCount(c.extracted_text) > wordCount(b.extracted_text) ? c : b
-    , results[0]);
+    const fused = results.find(r => r.model_name.includes("Fused Result"));
+    const best = fused || results[0];
     setPrimaryResultId(best.id);
   };
 
@@ -660,7 +660,12 @@ export default function Home() {
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">OCR Comparison Tool</h1>
           <p className="text-gray-500 mt-1">Upload document and create Gold Standard corrections</p>
         </div>
-        <div className="flex gap-3 mt-4 md:mt-0">
+        <div className="flex gap-3 mt-4 md:mt-0 items-center">
+          {user && (
+            <span className="font-semibold text-gray-700 mr-2 flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-full">
+              👤 {user.username}
+            </span>
+          )}
           <Link 
             href="/statistics"
             className="flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 rounded-lg shadow-sm transition-colors cursor-pointer font-bold"
@@ -673,6 +678,14 @@ export default function Home() {
           >
             <span>❓</span> Help
           </button>
+          {user && (
+            <button 
+              onClick={logout}
+              className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 hover:bg-red-100 text-red-700 rounded-lg shadow-sm transition-colors cursor-pointer font-bold"
+            >
+              🚪 Logout
+            </button>
+          )}
         </div>
       </header>
 
@@ -871,12 +884,19 @@ export default function Home() {
                     </button>
                  </div>
 
-                 <div className="bg-white rounded-xl border-2 border-indigo-200 shadow-md p-6 flex flex-col flex-1">
+                 <div className={`rounded-xl border-2 shadow-md p-6 flex flex-col flex-1 ${
+                   primaryResult.model_name.includes("Fused Result") 
+                     ? "bg-yellow-50 border-orange-200" 
+                     : "bg-white border-indigo-200"
+                 }`}>
                    <div className="flex justify-between items-center mb-4">
                      <div>
-                       <span className="font-bold text-indigo-700 text-2xl">{primaryResult.model_name}</span>
-                       <span className="ml-3 bg-amber-400 text-amber-900 text-[11px] font-bold px-2.5 py-0.5 rounded-full">★ Auto-Selected Best</span>
+                       <span className={`font-bold text-2xl ${primaryResult.model_name.includes("Fused Result") ? "text-orange-700" : "text-indigo-700"}`}>{primaryResult.model_name}</span>
+                       <span className="ml-3 bg-amber-400 text-amber-900 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                         {primaryResult.model_name.includes("Fused Result") ? "★ Auto Selected / Recommended" : "★ Auto-Selected Best"}
+                       </span>
                      </div>
+
                    </div>
 
                    <div className="text-gray-700 flex-1 flex flex-col gap-2 overflow-auto bg-gray-50 p-5 rounded-lg border border-gray-100">

@@ -6,6 +6,7 @@ import asyncio
 
 import models, schemas # type: ignore
 from database import get_db # type: ignore
+from services import fusion_service
 
 router = APIRouter()
 
@@ -198,6 +199,37 @@ async def process_document(document_id: int, language: str = "english", modality
         ocr_results.append(ocr_res)
 
     db.commit()
+
+    # --- Run Fusion Algorithm ---
+    try:
+        final_text, confidence, reconstructed_json = fusion_service.run_fusion(ocr_results)
+        
+        # Save to fusion_results table
+        fusion_record = models.FusionResult(
+            document_id=doc.id,
+            fused_text=final_text,
+            confidence_score=float(confidence),
+            model_count=len(ocr_results)
+        )
+        db.add(fusion_record)
+        
+        # Save as an OCRResult for seamless UI integration
+        fused_ocr_res = models.OCRResult(
+            document_id=doc.id,
+            model_name=f"⭐ Fused Result (Recommended) | Confidence: {int(confidence)}%",
+            extracted_text=final_text,
+            error_count=0,
+            raw_json=reconstructed_json
+        )
+        db.add(fused_ocr_res)
+        db.commit()
+        db.refresh(fused_ocr_res)
+        
+        # Insert Fused Result at the beginning of the list
+        ocr_results.insert(0, fused_ocr_res)
+    except Exception as e:
+        print(f"Fusion failed: {e}")
+
     for res in ocr_results:
         db.refresh(res)
 
@@ -261,3 +293,31 @@ def get_best_model(document_id: int, db: Session = Depends(get_db)):
     # Simplistic heuristic: model with the lowest error_count after manual annotations
     best_model = min(results, key=lambda x: x.error_count)
     return {"best_model": best_model.model_name, "error_count": best_model.error_count}
+
+@router.post("/fusion/generate", response_model=schemas.FusionGenerateResponse)
+def generate_fusion(document_id: int, db: Session = Depends(get_db)):
+    results = db.query(models.OCRResult).filter(
+        models.OCRResult.document_id == document_id,
+        ~models.OCRResult.model_name.contains("Fused Result")
+    ).all()
+    
+    if not results:
+        raise HTTPException(status_code=404, detail="No OCR results found for this document")
+
+    final_text, confidence, reconstructed_json = fusion_service.run_fusion(results)
+    
+    fusion_record = models.FusionResult(
+        document_id=document_id,
+        fused_text=final_text,
+        confidence_score=float(confidence),
+        model_count=len(results)
+    )
+    db.add(fusion_record)
+    db.commit()
+    
+    return {
+        "fused_text": final_text,
+        "confidence": confidence,
+        "source_models": [r.model_name for r in results]
+    }
+

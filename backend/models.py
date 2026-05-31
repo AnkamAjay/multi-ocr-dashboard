@@ -1,7 +1,17 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, JSON, Boolean
 from sqlalchemy.orm import relationship
 import datetime
+import datetime
 from database import Base
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True)
+    email = Column(String, unique=True, index=True)
+    password_hash = Column(String)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 class Document(Base):
     __tablename__ = "documents"
@@ -54,6 +64,7 @@ class AnnotationSummary(Base):
     text_edited = Column(Integer, default=0)
     total_corrections = Column(Integer, default=0)
     total_time_spent = Column(Float, default=0.0)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
 class PageCorrection(Base):
     __tablename__ = "page_corrections"
@@ -67,6 +78,7 @@ class PageCorrection(Base):
     text_edited = Column(Integer, default=0)
     total_corrections = Column(Integer, default=0)
     time_spent = Column(Float, default=0.0)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
 class AnnotationLog(Base):
     __tablename__ = "annotation_logs"
@@ -77,3 +89,14 @@ class AnnotationLog(Base):
     previous_value = Column(String, nullable=True)
     updated_value = Column(String, nullable=True)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+class FusionResult(Base):
+    __tablename__ = "fusion_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, index=True)
+    fused_text = Column(Text)
+    confidence_score = Column(Float, default=0.0)
+    model_count = Column(Integer, default=3)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)

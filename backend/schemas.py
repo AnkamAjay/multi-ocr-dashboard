@@ -125,3 +125,26 @@ class StatisticsUpdateRequest(BaseModel):
     text_edited: int
     time_spent: float
     logs: List[AnnotationLogCreate]
+
+class FusionGenerateResponse(BaseModel):
+    fused_text: str
+    confidence: float
+    source_models: List[str]
+
+class UserCreate(BaseModel):
+    username: str
+    email: str
+    password: str
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str

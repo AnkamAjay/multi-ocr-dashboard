@@ -3,8 +3,10 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { getStatisticsSummary, getStatisticsPages, getStatisticsLogs } from "../../services/api";
+import { useAuth } from "../../context/AuthContext";
 
 export default function StatisticsPage() {
+  const { user, logout } = useAuth();
   const [summary, setSummary] = useState<any | null>(null);
   const [pages, setPages] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
@@ -168,12 +170,27 @@ export default function StatisticsPage() {
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Annotation Statistics & Analytics</h1>
           <p className="text-gray-500 mt-1">Track your OCR correction workflow and audit history</p>
         </div>
-        <Link 
-          href="/" 
-          className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-xl shadow-sm transition-all font-bold cursor-pointer"
-        >
-          <span>←</span> Back to Annotation
-        </Link>
+        <div className="flex gap-3 items-center">
+          {user && (
+            <span className="font-semibold text-gray-700 mr-2 flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-full">
+              👤 {user.username}
+            </span>
+          )}
+          <Link 
+            href="/" 
+            className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-xl shadow-sm transition-all font-bold cursor-pointer"
+          >
+            <span>←</span> Back to Annotation
+          </Link>
+          {user && (
+            <button 
+              onClick={logout}
+              className="flex items-center gap-2 px-4 py-2.5 bg-red-50 border border-red-200 hover:bg-red-100 text-red-700 rounded-xl shadow-sm transition-colors cursor-pointer font-bold"
+            >
+              🚪 Logout
+            </button>
+          )}
+        </div>
       </header>
 
       <main className="max-w-[1600px] w-[95%] mx-auto flex flex-col gap-8 pb-12">

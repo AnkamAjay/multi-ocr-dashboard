@@ -24,7 +24,8 @@ export default function CompareModal({
   // Word count for each model (used to show why one is "best")
   const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
 
-  const bestId = results.reduce((best, cur) =>
+  const fusedId = results.find(r => r.model_name.includes("Fused Result"))?.id;
+  const bestId = fusedId ?? results.reduce((best, cur) =>
     wordCount(cur.extracted_text) > wordCount(best.extracted_text) ? cur : best,
     results[0]
   )?.id;
@@ -58,6 +59,7 @@ export default function CompareModal({
           {results.map((result) => {
             const isActive = result.id === primaryResultId;
             const isBest = result.id === bestId;
+            const isFused = result.model_name.includes("Fused Result");
             const wc = wordCount(result.extracted_text);
 
             return (
@@ -66,13 +68,15 @@ export default function CompareModal({
                 className={`relative flex flex-col rounded-xl border-2 transition-all shadow-sm ${
                   isActive
                     ? "border-indigo-500 bg-indigo-50 shadow-indigo-100"
+                    : isFused
+                    ? "border-orange-200 bg-yellow-50 hover:border-orange-300"
                     : "border-gray-200 bg-white hover:border-indigo-300 hover:shadow-md"
                 }`}
               >
                 {/* Best badge */}
                 {isBest && (
-                  <div className="absolute -top-3 left-4 bg-amber-400 text-amber-900 text-[11px] font-bold px-3 py-0.5 rounded-full shadow">
-                    ★ Auto-Selected Best
+                  <div className={`absolute -top-3 left-4 text-[11px] font-bold px-3 py-0.5 rounded-full shadow ${isFused ? 'bg-amber-400 text-amber-900' : 'bg-amber-400 text-amber-900'}`}>
+                    {isFused ? "★ Auto Selected / Recommended" : "★ Auto-Selected Best"}
                   </div>
                 )}
 
@@ -128,7 +132,7 @@ export default function CompareModal({
 
         {/* Footer */}
         <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-500 shrink-0">
-          Tip: "Best" is auto-selected by word count. Click "Use This Model" to switch and reload the bounding boxes.
+          Tip: Fused Result is auto-selected based on majority voting. Click "Use This Model" to switch and reload the bounding boxes.
         </div>
       </div>
     </div>

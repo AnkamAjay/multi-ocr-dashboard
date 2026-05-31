@@ -2,6 +2,45 @@ import axios from 'axios';
 import { BBox } from '../components/BboxCanvas';
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
+const AUTH_BASE_URL = 'http://127.0.0.1:8000/api/auth';
+
+// Add a request interceptor to attach JWT token
+axios.interceptors.request.use(
+    (config) => {
+        if (typeof window !== 'undefined') {
+            const token = localStorage.getItem('token');
+            if (token) {
+                config.headers.Authorization = `Bearer ${token}`;
+            }
+        }
+        return config;
+    },
+    (error) => {
+        return Promise.reject(error);
+    }
+);
+
+export const loginUser = async (credentials: any) => {
+    // FastAPI OAuth2PasswordRequestForm expects form data
+    const formData = new URLSearchParams();
+    formData.append('username', credentials.username);
+    formData.append('password', credentials.password);
+    
+    const response = await axios.post(`${AUTH_BASE_URL}/login`, formData, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
+    return response.data;
+};
+
+export const signupUser = async (userData: any) => {
+    const response = await axios.post(`${AUTH_BASE_URL}/signup`, userData);
+    return response.data;
+};
+
+export const getMe = async () => {
+    const response = await axios.get(`${AUTH_BASE_URL}/me`);
+    return response.data;
+};
 
 export interface BatchUploadResponse {
     document_ids: number[];
