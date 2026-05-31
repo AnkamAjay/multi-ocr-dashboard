@@ -24,6 +24,8 @@ def update_statistics(stats_request: schemas.StatisticsUpdateRequest, db: Sessio
         summary = models.AnnotationSummary(
             document_id=doc_id,
             user_id=user_id,
+            source_file_type=stats_request.source_file_type or "IMAGE",
+            total_pages=stats_request.total_pages or 1,
             total_pages_corrected=0,
             bbox_deleted=0,
             bbox_created=0,
@@ -33,6 +35,11 @@ def update_statistics(stats_request: schemas.StatisticsUpdateRequest, db: Sessio
             total_time_spent=0.0
         )
         db.add(summary)
+    else:
+        if stats_request.source_file_type:
+            summary.source_file_type = stats_request.source_file_type
+        if stats_request.total_pages:
+            summary.total_pages = stats_request.total_pages
     
     # Increment summary stats
     summary.bbox_deleted += stats_request.bbox_deleted
@@ -61,6 +68,8 @@ def update_statistics(stats_request: schemas.StatisticsUpdateRequest, db: Sessio
         page_corr = models.PageCorrection(
             document_id=doc_id,
             user_id=user_id,
+            source_file_type=stats_request.source_file_type or "IMAGE",
+            total_pages=stats_request.total_pages or 1,
             page_number=stats_request.page_number,
             bbox_deleted=stats_request.bbox_deleted,
             bbox_created=stats_request.bbox_created,
@@ -78,6 +87,10 @@ def update_statistics(stats_request: schemas.StatisticsUpdateRequest, db: Sessio
         existing_page.text_edited += stats_request.text_edited
         existing_page.total_corrections += current_corrections
         existing_page.time_spent += stats_request.time_spent
+        if stats_request.source_file_type:
+            existing_page.source_file_type = stats_request.source_file_type
+        if stats_request.total_pages:
+            existing_page.total_pages = stats_request.total_pages
         
     # 3. Add Annotation Logs
     for log in stats_request.logs:

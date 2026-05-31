@@ -49,6 +49,8 @@ export interface BatchUploadResponse {
     is_batch: boolean;
     is_cached: boolean;
     cached_corrected_json?: BBox[] | null;
+    source_file_type?: string;
+    total_pages?: number;
 }
 
 export const uploadDocument = async (file: File): Promise<BatchUploadResponse> => {
@@ -110,6 +112,8 @@ export interface StatisticsUpdateRequest {
     text_edited: number;
     time_spent: number;
     logs: AnnotationLogCreate[];
+    source_file_type?: string;
+    total_pages?: number;
 }
 
 export const saveStatistics = async (data: StatisticsUpdateRequest) => {

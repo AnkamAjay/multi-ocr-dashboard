@@ -56,6 +56,8 @@ class BatchUploadResponse(BaseModel):
     # Cache-hit fields — populated when the same file has been corrected before
     is_cached: bool = False
     cached_corrected_json: Optional[Any] = None
+    source_file_type: Optional[str] = "IMAGE"
+    total_pages: Optional[int] = 1
 
 class SaveCorrectionsRequest(BaseModel):
     """Payload for POST /save-corrections — stores the Gold Standard bbox+text list."""
@@ -89,6 +91,8 @@ class PageCorrectionBase(BaseModel):
     text_edited: int
     total_corrections: int
     time_spent: float
+    source_file_type: Optional[str] = "IMAGE"
+    total_pages: Optional[int] = 1
 
 class PageCorrectionCreate(PageCorrectionBase):
     pass
@@ -108,6 +112,8 @@ class AnnotationSummaryBase(BaseModel):
     text_edited: int
     total_corrections: int
     total_time_spent: float
+    source_file_type: Optional[str] = "IMAGE"
+    total_pages: Optional[int] = 1
 
 class AnnotationSummaryResponse(AnnotationSummaryBase):
     id: int
@@ -125,6 +131,8 @@ class StatisticsUpdateRequest(BaseModel):
     text_edited: int
     time_spent: float
     logs: List[AnnotationLogCreate]
+    source_file_type: Optional[str] = "IMAGE"
+    total_pages: Optional[int] = 1
 
 class FusionGenerateResponse(BaseModel):
     fused_text: str

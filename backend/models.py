@@ -57,6 +57,8 @@ class AnnotationSummary(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     document_id = Column(Integer, index=True)
+    source_file_type = Column(String, default="IMAGE")
+    total_pages = Column(Integer, default=1)
     total_pages_corrected = Column(Integer, default=0)
     bbox_deleted = Column(Integer, default=0)
     bbox_created = Column(Integer, default=0)
@@ -71,6 +73,8 @@ class PageCorrection(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     document_id = Column(Integer, index=True)
+    source_file_type = Column(String, default="IMAGE")
+    total_pages = Column(Integer, default=1)
     page_number = Column(Integer, default=1)
     bbox_deleted = Column(Integer, default=0)
     bbox_created = Column(Integer, default=0)

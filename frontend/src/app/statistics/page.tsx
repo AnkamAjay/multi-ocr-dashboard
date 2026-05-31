@@ -291,6 +291,8 @@ export default function StatisticsPage() {
                   <thead className="bg-gray-50 text-gray-600 font-semibold sticky top-0 z-10 shadow-[0_1px_2px_-1px_rgba(0,0,0,0.1)]">
                     <tr>
                       <th className="px-4 py-3 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handlePageSort("page_number")}>Page No {getSortIcon("page_number")}</th>
+                      <th className="px-4 py-3 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handlePageSort("source_file_type")}>Type {getSortIcon("source_file_type")}</th>
+                      <th className="px-4 py-3 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handlePageSort("total_pages")}>Total Pages {getSortIcon("total_pages")}</th>
                       <th className="px-4 py-3 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handlePageSort("bbox_deleted")}>Deleted {getSortIcon("bbox_deleted")}</th>
                       <th className="px-4 py-3 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handlePageSort("bbox_created")}>Created {getSortIcon("bbox_created")}</th>
                       <th className="px-4 py-3 cursor-pointer hover:bg-gray-100 transition-colors" onClick={() => handlePageSort("bbox_edited")}>Edited {getSortIcon("bbox_edited")}</th>
@@ -302,12 +304,14 @@ export default function StatisticsPage() {
                   <tbody className="divide-y divide-gray-100">
                     {filteredAndSortedPages.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center text-gray-500">No page details found.</td>
+                        <td colSpan={9} className="px-4 py-8 text-center text-gray-500">No page details found.</td>
                       </tr>
                     ) : (
                       filteredAndSortedPages.map((p, idx) => (
                         <tr key={idx} className="hover:bg-indigo-50/50 transition-colors even:bg-gray-50/50">
                           <td className="px-4 py-3 font-medium text-gray-900">Page {p.page_number} <span className="text-xs text-gray-400 ml-1">(Doc #{p.document_id})</span></td>
+                          <td className="px-4 py-3 text-xs text-gray-600 font-semibold uppercase">{p.source_file_type || "IMAGE"}</td>
+                          <td className="px-4 py-3 text-gray-600">{p.total_pages || 1}</td>
                           <td className="px-4 py-3 text-gray-600">{p.bbox_deleted}</td>
                           <td className="px-4 py-3 text-gray-600">{p.bbox_created}</td>
                           <td className="px-4 py-3 text-gray-600">{p.bbox_edited}</td>

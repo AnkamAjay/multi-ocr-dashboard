@@ -34,6 +34,8 @@ export default function Home() {
   const [batchFilenames, setBatchFilenames] = useState<string[]>([]);
   const [activeDocIndex, setActiveDocIndex] = useState(0);
   const [isBatch, setIsBatch] = useState(false);
+  const [sourceFileType, setSourceFileType] = useState<string>("IMAGE");
+  const [totalPages, setTotalPages] = useState<number>(1);
   const [batchProgress, setBatchProgress] = useState<{done: number, total: number} | null>(null);
 
   const activeDocId = batchDocIds[activeDocIndex] ?? null;
@@ -106,6 +108,8 @@ export default function Home() {
     setMiniEditorText("");
     setInitialBboxList([]);
     setEditStartTime(null);
+    setSourceFileType("IMAGE");
+    setTotalPages(1);
   };
 
   // Sync state to localStorage
@@ -116,6 +120,8 @@ export default function Home() {
       localStorage.setItem('batchFilenames', JSON.stringify(batchFilenames));
       localStorage.setItem('activeDocIndex', activeDocIndex.toString());
       localStorage.setItem('isBatch', isBatch.toString());
+      localStorage.setItem('sourceFileType', sourceFileType);
+      localStorage.setItem('totalPages', totalPages.toString());
       if (file) {
         localStorage.setItem('file_name', file.name);
         localStorage.setItem('file_type', file.type);
@@ -126,10 +132,12 @@ export default function Home() {
       localStorage.removeItem('batchFilenames');
       localStorage.removeItem('activeDocIndex');
       localStorage.removeItem('isBatch');
+      localStorage.removeItem('sourceFileType');
+      localStorage.removeItem('totalPages');
       localStorage.removeItem('file_name');
       localStorage.removeItem('file_type');
     }
-  }, [batchDocIds, batchFilePaths, batchFilenames, activeDocIndex, isBatch, file]);
+  }, [batchDocIds, batchFilePaths, batchFilenames, activeDocIndex, isBatch, file, sourceFileType, totalPages]);
 
   // Restore state from localStorage on mount
   useEffect(() => {
@@ -144,12 +152,16 @@ export default function Home() {
           const batch = localStorage.getItem('isBatch') === 'true';
           const fname = localStorage.getItem('file_name') || '';
           const ftype = localStorage.getItem('file_type') || '';
+          const sft = localStorage.getItem('sourceFileType') || 'IMAGE';
+          const tp = parseInt(localStorage.getItem('totalPages') || '1', 10);
           
           setBatchDocIds(docIds);
           setBatchFilePaths(filePaths);
           setBatchFilenames(filenames);
           setActiveDocIndex(docIndex);
           setIsBatch(batch);
+          setSourceFileType(sft);
+          setTotalPages(tp);
           if (fname) {
             setFile({ name: fname, type: ftype } as any);
           }
@@ -194,6 +206,8 @@ export default function Home() {
       setActiveDocIndex(0);
       setPrimaryResultId(null);
       setEditingId(null);
+      setSourceFileType("IMAGE");
+      setTotalPages(1);
     }
   };
 
@@ -256,6 +270,8 @@ export default function Home() {
       setBatchFilenames(batchData.filenames);
       setIsBatch(batchData.is_batch);
       setActiveDocIndex(0);
+      setSourceFileType(batchData.source_file_type || "IMAGE");
+      setTotalPages(batchData.total_pages || 1);
 
       // Cache Hit Check
       if (batchData.is_cached && batchData.cached_corrected_json) {
@@ -562,7 +578,9 @@ export default function Home() {
         bbox_edited,
         text_edited,
         time_spent: timeSpent,
-        logs
+        logs,
+        source_file_type: sourceFileType,
+        total_pages: totalPages || batchDocIds.length || 1
       };
 
       await saveStatistics(statsPayload);
@@ -708,36 +726,62 @@ export default function Home() {
                  </div>
                </div>
 
-               {file?.type !== "application/pdf" && (
-                 <div className="mb-3">
-                   <BboxToolbar 
-                     toolMode={toolMode}
-                     selectedIds={selectedBboxIds}
-                     bboxCount={bboxList.filter(b=>b.status!=='deleted').length}
-                     onModeChange={setToolMode}
-                     onDelete={handleDeleteBbox}
-                     onMerge={handleMergeBbox}
-                     onUndo={handleUndo}
-                     canUndo={bboxHistory.length > 0}
-                   />
+               {isBatch && batchDocIds.length > 0 && (
+                 <div className="flex items-center justify-between bg-indigo-50 border border-indigo-100 rounded-xl p-2.5 mb-3 shadow-inner select-none animate-fade-in">
+                   <button
+                     onClick={() => handleSelectDocument(Math.max(0, activeDocIndex - 1))}
+                     disabled={activeDocIndex === 0}
+                     className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                       activeDocIndex === 0
+                         ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                         : 'bg-white hover:bg-indigo-100 border-indigo-200 text-indigo-700 cursor-pointer shadow-sm active:scale-95'
+                     }`}
+                   >
+                     ◀ Prev Page
+                   </button>
+                   
+                   <span className="text-xs font-semibold text-indigo-900 bg-white border border-indigo-200 px-3 py-1.5 rounded-lg shadow-sm">
+                     Page <strong className="text-indigo-600 font-bold">{activeDocIndex + 1}</strong> of <strong className="text-indigo-900 font-bold">{batchDocIds.length}</strong>
+                   </span>
+
+                   <button
+                     onClick={() => handleSelectDocument(Math.min(batchDocIds.length - 1, activeDocIndex + 1))}
+                     disabled={activeDocIndex === batchDocIds.length - 1}
+                     className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                       activeDocIndex === batchDocIds.length - 1
+                         ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                         : 'bg-white hover:bg-indigo-100 border-indigo-200 text-indigo-700 cursor-pointer shadow-sm active:scale-95'
+                     }`}
+                   >
+                     Next Page ▶
+                   </button>
                  </div>
                )}
 
+               <div className="mb-3">
+                 <BboxToolbar 
+                   toolMode={toolMode}
+                   selectedIds={selectedBboxIds}
+                   bboxCount={bboxList.filter(b=>b.status!=='deleted').length}
+                   onModeChange={setToolMode}
+                   onDelete={handleDeleteBbox}
+                   onMerge={handleMergeBbox}
+                   onUndo={handleUndo}
+                   canUndo={bboxHistory.length > 0}
+                 />
+               </div>
+
                <div className="flex-1 w-full bg-gray-50 rounded-lg border border-gray-200 overflow-auto p-2 min-h-[600px] lg:max-h-[80vh]">
-                   {file?.type === "application/pdf" ? (
-                       <object data={`${previewUrl}#navpanes=0&scrollbar=0&view=FitH&zoom=${Math.round(zoomLevel * 100)}`} type="application/pdf" className="w-full h-[800px] rounded"></object>
-                   ) : (
-                       <div style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'top left' }}>
-                          <BboxCanvas 
-                            imageUrl={previewUrl || ""}
-                            bboxList={bboxList}
-                            selectedIds={selectedBboxIds}
-                            toolMode={toolMode}
-                            onBboxChange={updateBboxList}
-                            onSelectChange={setSelectedBboxIds}
-                          />
-                       </div>
-                   )}
+                   <div style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'top left' }}>
+                      <BboxCanvas 
+                        imageUrl={previewUrl || ""}
+                        bboxList={bboxList}
+                        selectedIds={selectedBboxIds}
+                        toolMode={toolMode}
+                        onBboxChange={updateBboxList}
+                        onSelectChange={setSelectedBboxIds}
+                      />
+                   </div>
                </div>
             </div>
           ) : (
@@ -770,10 +814,17 @@ export default function Home() {
                 
                 {file ? (
                    <div className="flex flex-col flex-1 border border-gray-300 bg-white shadow-sm rounded-xl p-3 gap-2">
+                     {batchDocIds.length > 0 && (
+                       <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-2.5 mb-2 text-xs font-semibold text-indigo-800 flex justify-between items-center shadow-inner select-none animate-fade-in">
+                         <span>📁 File Type: <strong className="uppercase">{sourceFileType}</strong></span>
+                         <span>📄 Pages/Images: <strong>{totalPages}</strong></span>
+                       </div>
+                     )}
+                     
                      {isBatch && batchFilenames.length > 0 ? (
                        <div className="flex flex-col gap-1 max-h-[280px] overflow-y-auto">
                          {batchFilenames.map((fname, idx) => (
-                           <button key={idx} onClick={() => handleSelectDocument(idx)} className={`text-left text-xs px-3 py-2 rounded-lg border ${idx === activeDocIndex ? 'bg-[#4F46E5] text-white' : 'bg-gray-50 hover:bg-blue-50'}`}>📄 {fname}</button>
+                           <button key={idx} onClick={() => handleSelectDocument(idx)} className={`text-left text-xs px-3 py-2 rounded-lg border transition-all ${idx === activeDocIndex ? 'bg-[#4F46E5] text-white font-bold shadow-sm' : 'bg-gray-50 hover:bg-blue-50 text-gray-700'}`}>📄 {fname}</button>
                          ))}
                        </div>
                      ) : (
@@ -781,10 +832,11 @@ export default function Home() {
                      )}
                    </div>
                  ) : (
-                   <label className="flex-1 border-2 border-dashed border-[#A78BFA] rounded-xl flex flex-col items-center justify-center bg-[#eff6ff] hover:bg-blue-100 hover:border-[#4F46E5] cursor-pointer p-8 min-h-[200px]">
+                   <label className="flex-1 border-2 border-dashed border-[#A78BFA] rounded-xl flex flex-col items-center justify-center bg-[#eff6ff] hover:bg-blue-100 hover:border-[#4F46E5] cursor-pointer p-8 min-h-[200px] transition-all duration-300">
                      <input type="file" className="hidden" accept=".jpg,.jpeg,.png,.pdf,.zip" onChange={handleFileChange} />
-                     <span className="text-4xl mb-3">📄</span>
+                     <span className="text-4xl mb-3 animate-bounce">📄</span>
                      <p className="text-base font-semibold text-[#4F46E5]">Upload your document</p>
+                     <p className="text-xs text-gray-400 mt-2">Supports: JPG, JPEG, PNG, PDF, ZIP</p>
                    </label>
                  )}
               </div>
@@ -839,7 +891,7 @@ export default function Home() {
                        <ReactTransliterate
                          value={miniEditorText}
                          onChangeText={(text) => handleMiniEditorChange(text)}
-                         lang={getTransliterateLang(language)}
+                         lang={getTransliterateLang(language) as any}
                          renderComponent={(props) => (
                            <textarea 
                              {...props}
@@ -876,10 +928,42 @@ export default function Home() {
 
              {/* Primary Card View (Before clicking Edit) */}
              {editingId === null && primaryResult && !loading && (
-               <div className="flex flex-col h-full">
-                 <div className="flex items-center justify-between mb-6 pb-2 border-b border-gray-200">
+               <div className="flex flex-col h-full animate-fade-in">
+                 {isBatch && batchDocIds.length > 0 && (
+                   <div className="flex items-center justify-between bg-indigo-50 border border-indigo-100 rounded-xl p-3 mb-4 shadow-sm select-none shrink-0">
+                     <button
+                       onClick={() => handleSelectDocument(Math.max(0, activeDocIndex - 1))}
+                       disabled={activeDocIndex === 0}
+                       className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold rounded-lg border transition-all ${
+                         activeDocIndex === 0
+                           ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                           : 'bg-white hover:bg-indigo-100 border-indigo-200 text-indigo-700 cursor-pointer shadow-sm active:scale-95'
+                       }`}
+                     >
+                       ◀ Prev Page
+                     </button>
+                     
+                     <span className="text-sm font-semibold text-indigo-900 bg-white border border-indigo-200 px-4 py-1.5 rounded-lg shadow-sm">
+                       Page <strong className="text-indigo-600 font-bold">{activeDocIndex + 1}</strong> of <strong className="text-indigo-900 font-bold">{batchDocIds.length}</strong>
+                     </span>
+
+                     <button
+                       onClick={() => handleSelectDocument(Math.min(batchDocIds.length - 1, activeDocIndex + 1))}
+                       disabled={activeDocIndex === batchDocIds.length - 1}
+                       className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold rounded-lg border transition-all ${
+                         activeDocIndex === batchDocIds.length - 1
+                           ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                           : 'bg-white hover:bg-indigo-100 border-indigo-200 text-indigo-700 cursor-pointer shadow-sm active:scale-95'
+                       }`}
+                     >
+                       Next Page ▶
+                     </button>
+                   </div>
+                 )}
+
+                 <div className="flex items-center justify-between mb-6 pb-2 border-b border-gray-200 shrink-0">
                     <h2 className="text-xl font-bold text-gray-800">Best OCR Result</h2>
-                    <button onClick={() => setIsCompareModalOpen(true)} className="bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-full text-sm font-bold border border-indigo-100 hover:bg-indigo-100">
+                    <button onClick={() => setIsCompareModalOpen(true)} className="bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-full text-sm font-bold border border-indigo-100 hover:bg-indigo-100 shrink-0">
                       🔍 Compare All Models
                     </button>
                  </div>
