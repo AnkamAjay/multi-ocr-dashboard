@@ -226,27 +226,27 @@ export default function StatisticsPage() {
             <div className="flex overflow-x-auto flex-nowrap gap-5 pb-4 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-200 hover:[&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full">
               
               <div className="min-w-[200px] flex-shrink-0 flex-1 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between border-l-4 border-l-indigo-500 hover:shadow-md transition-shadow">
-                <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2">📄 Pages</span>
+                <span className="text-sm font-semibold text-indigo-600 uppercase tracking-wider flex items-center gap-2">📄 Pages</span>
                 <span className="text-4xl font-extrabold text-gray-900 mt-2">{summary?.total_pages_corrected || 0}</span>
               </div>
 
               <div className="min-w-[200px] flex-shrink-0 flex-1 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between border-l-4 border-l-red-500 hover:shadow-md transition-shadow">
-                <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2">🗑️ Deleted</span>
+                <span className="text-sm font-semibold text-red-600 uppercase tracking-wider flex items-center gap-2">🗑️ Deleted</span>
                 <span className="text-4xl font-extrabold text-gray-900 mt-2">{summary?.bbox_deleted || 0}</span>
               </div>
 
               <div className="min-w-[200px] flex-shrink-0 flex-1 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between border-l-4 border-l-emerald-500 hover:shadow-md transition-shadow">
-                <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2">➕ Created</span>
+                <span className="text-sm font-semibold text-emerald-600 uppercase tracking-wider flex items-center gap-2">➕ Created</span>
                 <span className="text-4xl font-extrabold text-gray-900 mt-2">{summary?.bbox_created || 0}</span>
               </div>
 
               <div className="min-w-[200px] flex-shrink-0 flex-1 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between border-l-4 border-l-amber-500 hover:shadow-md transition-shadow">
-                <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2">📐 Edited</span>
+                <span className="text-sm font-semibold text-amber-600 uppercase tracking-wider flex items-center gap-2">📐 Edited</span>
                 <span className="text-4xl font-extrabold text-gray-900 mt-2">{summary?.bbox_edited || 0}</span>
               </div>
 
               <div className="min-w-[200px] flex-shrink-0 flex-1 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between border-l-4 border-l-blue-500 hover:shadow-md transition-shadow">
-                <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-2">📝 Text</span>
+                <span className="text-sm font-semibold text-blue-600 uppercase tracking-wider flex items-center gap-2">📝 Text</span>
                 <span className="text-4xl font-extrabold text-gray-900 mt-2">{summary?.text_edited || 0}</span>
               </div>
 

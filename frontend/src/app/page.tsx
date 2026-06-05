@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import { 
-  uploadDocument, 
-  processDocument, 
-  saveAnnotation, 
-  saveBboxCorrections, 
+import {
+  uploadDocument,
+  processDocument,
+  saveAnnotation,
+  saveBboxCorrections,
   getResults,
   saveStatistics,
   AnnotationLogCreate
@@ -15,6 +15,7 @@ import { useAuth } from "../context/AuthContext";
 import BboxCanvas, { BBox, BBoxStatus } from "../components/BboxCanvas";
 import BboxToolbar from "../components/BboxToolbar";
 import CompareModal from "../components/CompareModal";
+import HelpPanel from "../components/HelpPanel";
 import { ReactTransliterate } from "react-transliterate";
 import "react-transliterate/dist/index.css";
 
@@ -36,7 +37,7 @@ export default function Home() {
   const [isBatch, setIsBatch] = useState(false);
   const [sourceFileType, setSourceFileType] = useState<string>("IMAGE");
   const [totalPages, setTotalPages] = useState<number>(1);
-  const [batchProgress, setBatchProgress] = useState<{done: number, total: number} | null>(null);
+  const [batchProgress, setBatchProgress] = useState<{ done: number, total: number } | null>(null);
 
   const activeDocId = batchDocIds[activeDocIndex] ?? null;
   const previewUrl = batchFilePaths[activeDocIndex] ? `${batchFilePaths[activeDocIndex]}?v=${activeDocId}` : null;
@@ -53,7 +54,7 @@ export default function Home() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editedText, setEditedText] = useState("");
   const [zoomLevel, setZoomLevel] = useState(1);
-  const [imgDimensions, setImgDimensions] = useState<{w: number, h: number} | null>(null);
+  const [imgDimensions, setImgDimensions] = useState<{ w: number, h: number } | null>(null);
 
   // ── BBox Canvas State ──
   const [bboxList, setBboxList] = useState<BBox[]>([]);
@@ -154,7 +155,7 @@ export default function Home() {
           const ftype = localStorage.getItem('file_type') || '';
           const sft = localStorage.getItem('sourceFileType') || 'IMAGE';
           const tp = parseInt(localStorage.getItem('totalPages') || '1', 10);
-          
+
           setBatchDocIds(docIds);
           setBatchFilePaths(filePaths);
           setBatchFilenames(filenames);
@@ -165,7 +166,7 @@ export default function Home() {
           if (fname) {
             setFile({ name: fname, type: ftype } as any);
           }
-          
+
           // Fetch results to rebuild session state
           docIds.forEach(async (id: number) => {
             try {
@@ -174,9 +175,9 @@ export default function Home() {
                 setBatchResults(prev => ({ ...prev, [id]: res.ocr_results }));
                 if (id === docIds[docIndex]) {
                   const wordCount = (t: string) => (t || "").trim().split(/\s+/).filter(Boolean).length;
-                  const best = res.ocr_results.reduce((b: any, c: any) => 
+                  const best = res.ocr_results.reduce((b: any, c: any) =>
                     wordCount(c.extracted_text) > wordCount(b.extracted_text) ? c : b
-                  , res.ocr_results[0]);
+                    , res.ocr_results[0]);
                   setPrimaryResultId(best.id);
                 }
               }
@@ -217,7 +218,7 @@ export default function Home() {
     setEditingId(null);
     setPrimaryResultId(null);
     setBboxList([]);
-    
+
     if (docId && (!batchResults[docId] || batchResults[docId].length === 0)) {
       try {
         const data = await getResults(docId);
@@ -225,14 +226,14 @@ export default function Home() {
           setBatchResults(prev => ({ ...prev, [docId]: data.ocr_results }));
           autoSelectBestModel(data.ocr_results);
         } else if (data.is_corrected && data.corrected_json) {
-           // Cached logic
-           setCachedCorrectionsForDoc(data.corrected_json);
-           setBboxList(data.corrected_json);
-           setEditingId(-1);
-           setPrimaryResultId(-1);
-           setEditedText(data.corrected_json.map((b: BBox) => b.text).join('\n'));
-           setInitialBboxList(data.corrected_json);
-           setEditStartTime(Date.now());
+          // Cached logic
+          setCachedCorrectionsForDoc(data.corrected_json);
+          setBboxList(data.corrected_json);
+          setEditingId(-1);
+          setPrimaryResultId(-1);
+          setEditedText(data.corrected_json.map((b: BBox) => b.text).join('\n'));
+          setInitialBboxList(data.corrected_json);
+          setEditStartTime(Date.now());
         }
       } catch (err) {
         console.error("Failed to fetch results:", err);
@@ -244,7 +245,7 @@ export default function Home() {
 
   const autoSelectBestModel = (results: any[]) => {
     if (!results || results.length === 0) return;
-    const fused = results.find(r => r.model_name.includes("Fused Result"));
+    const fused = results.find(r => r.model_name.includes("Fused Result" ));
     const best = fused || results[0];
     setPrimaryResultId(best.id);
   };
@@ -261,10 +262,10 @@ export default function Home() {
     setBatchProgress(null);
     setCachedCorrectionsForDoc(null);
     setBboxList([]);
-    
+
     try {
       const batchData = await uploadDocument(file);
-      
+
       setBatchDocIds(batchData.document_ids);
       setBatchFilePaths(batchData.file_paths);
       setBatchFilenames(batchData.filenames);
@@ -297,12 +298,12 @@ export default function Home() {
         const results = await processDocument(docId, language, modality);
         setBatchResults(prev => ({ ...prev, [docId]: results }));
         setBatchProgress({ done: i + 1, total });
-        
+
         if (i === 0) firstDocResults = results;
       }
 
       if (firstDocResults && firstDocResults.length > 0) {
-         autoSelectBestModel(firstDocResults);
+        autoSelectBestModel(firstDocResults);
       }
 
       if (batchData.is_batch) {
@@ -320,7 +321,7 @@ export default function Home() {
 
   const handleStartEditing = (resultId: number) => {
     setEditingId(resultId);
-    
+
     // If it's the cached doc, we already have bboxList setup
     if (resultId === -1 && cachedCorrectionsForDoc) {
       return;
@@ -360,7 +361,7 @@ export default function Home() {
 
   const handleDeleteBbox = () => {
     if (selectedBboxIds.length === 0) return;
-    const newList = bboxList.map(b => 
+    const newList = bboxList.map(b =>
       selectedBboxIds.includes(b.id) ? { ...b, status: "deleted" as BBoxStatus } : b
     );
     updateBboxList(newList);
@@ -380,7 +381,7 @@ export default function Home() {
         const boxCenterY = box.y + box.h / 2;
         const lineTop = Math.min(...currentLine.map(b => b.y));
         const lineBottom = Math.max(...currentLine.map(b => b.y + b.h));
-        
+
         if (boxCenterY >= lineTop && boxCenterY <= lineBottom) {
           currentLine.push(box);
           placed = true;
@@ -396,29 +397,29 @@ export default function Home() {
 
   const handleMergeBbox = () => {
     if (selectedBboxIds.length < 2) return;
-    
+
     const selected = bboxList.filter(b => selectedBboxIds.includes(b.id));
     const sorted = sortBboxesInReadingOrder(selected);
-    
+
     const x = Math.min(...sorted.map(b => b.x));
     const y = Math.min(...sorted.map(b => b.y));
     const xMax = Math.max(...sorted.map(b => b.x + b.w));
     const yMax = Math.max(...sorted.map(b => b.y + b.h));
-    
+
     const mergedText = sorted.map(b => b.text).join(' ');
-    
+
     const mergedBbox: BBox = {
       id: `merged-${Date.now()}`,
       x, y, w: xMax - x, h: yMax - y,
       text: mergedText,
       status: 'new'
     };
-    
+
     const newList = [
       ...bboxList.filter(b => !selectedBboxIds.includes(b.id)),
       mergedBbox
     ];
-    
+
     updateBboxList(newList);
     setSelectedBboxIds([mergedBbox.id]);
     setMiniEditorText(mergedBbox.text);
@@ -446,7 +447,7 @@ export default function Home() {
   const handleMiniEditorChange = (val: string) => {
     setMiniEditorText(val);
     if (selectedBboxIds.length === 1) {
-      setBboxList(prev => prev.map(b => 
+      setBboxList(prev => prev.map(b =>
         b.id === selectedBboxIds[0] ? { ...b, text: val, status: b.status === 'original' ? 'modified' : b.status } : b
       ));
     }
@@ -455,7 +456,7 @@ export default function Home() {
   const generateFullText = (bboxes: BBox[]) => {
     const validBboxes = bboxes.filter(b => b.status !== 'deleted');
     if (validBboxes.length === 0) return "";
-    
+
     // We can reuse the same sorting logic
     const sortedLines: BBox[][] = [];
     const sortedByY = [...validBboxes].sort((a, b) => a.y - b.y);
@@ -467,7 +468,7 @@ export default function Home() {
         const boxCenterY = box.y + box.h / 2;
         const lineTop = Math.min(...currentLine.map(b => b.y));
         const lineBottom = Math.max(...currentLine.map(b => b.y + b.h));
-        
+
         if (boxCenterY >= lineTop && boxCenterY <= lineBottom) {
           currentLine.push(box);
           placed = true;
@@ -495,13 +496,13 @@ export default function Home() {
     try {
       const finalBboxes = bboxList.filter(b => b.status !== 'deleted');
       const fullText = generateFullText(finalBboxes);
-      
+
       await saveBboxCorrections(activeDocId, finalBboxes, fullText);
-      
+
       if (editingId && editingId !== -1) {
         await saveAnnotation(editingId, fullText);
       }
-      
+
       // ── Calculate Statistics via Diffing ──
       let bbox_created = 0;
       let bbox_deleted = 0;
@@ -526,10 +527,10 @@ export default function Home() {
           });
         } else {
           // Check position edit
-          const isPosChanged = Math.abs(initBox.x - finalBox.x) > 2 || 
-                               Math.abs(initBox.y - finalBox.y) > 2 || 
-                               Math.abs(initBox.w - finalBox.w) > 2 || 
-                               Math.abs(initBox.h - finalBox.h) > 2;
+          const isPosChanged = Math.abs(initBox.x - finalBox.x) > 2 ||
+            Math.abs(initBox.y - finalBox.y) > 2 ||
+            Math.abs(initBox.w - finalBox.w) > 2 ||
+            Math.abs(initBox.h - finalBox.h) > 2;
           if (isPosChanged) {
             bbox_edited += 1;
             logs.push({
@@ -584,7 +585,7 @@ export default function Home() {
       };
 
       await saveStatistics(statsPayload);
-      
+
       setInitialBboxList(finalBboxes);
       setEditStartTime(Date.now());
 
@@ -675,7 +676,7 @@ export default function Home() {
       {/* HEADER */}
       <header className="max-w-[1600px] w-[95%] mx-auto flex flex-col md:flex-row items-center justify-between pb-6 mb-6 border-b border-gray-200">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">OCR Comparison Tool</h1>
+          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Annotation Tool</h1>
           <p className="text-gray-500 mt-1">Upload document and create Gold Standard corrections</p>
         </div>
         <div className="flex gap-3 mt-4 md:mt-0 items-center">
@@ -684,20 +685,20 @@ export default function Home() {
               👤 {user.username}
             </span>
           )}
-          <Link 
+          <Link
             href="/statistics"
             className="flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 rounded-lg shadow-sm transition-colors cursor-pointer font-bold"
           >
             📊 My Statistics
           </Link>
-          <button 
+          <button
             onClick={() => setIsHelpOpen(true)}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-lg shadow-sm transition-colors cursor-pointer"
           >
             <span>❓</span> Help
           </button>
           {user && (
-            <button 
+            <button
               onClick={logout}
               className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 hover:bg-red-100 text-red-700 rounded-lg shadow-sm transition-colors cursor-pointer font-bold"
             >
@@ -708,81 +709,79 @@ export default function Home() {
       </header>
 
       <main className="max-w-[1600px] w-[95%] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 h-full min-h-[75vh]">
-        
+
         {/* LEFT PANEL */}
         <div className={`col-span-1 ${editingId !== null ? 'lg:col-span-6' : 'lg:col-span-4'} bg-white rounded-2xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] border border-gray-100 p-6 flex flex-col transition-all duration-300`}>
-          
+
           {editingId !== null ? (
             <div className="flex flex-col h-full bg-white rounded-xl w-full">
-               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                 <h2 className="text-xl font-bold text-gray-800">Original Document Preview</h2>
-                 <div className="flex items-center gap-2">
-                   <div className="flex items-center bg-gray-100 rounded-lg p-1">
-                     <button onClick={handleZoomOut} className="w-8 h-8 flex items-center justify-center hover:bg-white rounded shadow-sm text-xl">-</button>
-                     <span className="text-sm font-semibold px-2">{Math.round(zoomLevel * 100)}%</span>
-                     <button onClick={handleZoomIn} className="w-8 h-8 flex items-center justify-center hover:bg-white rounded shadow-sm text-xl">+</button>
-                     <button onClick={handleZoomReset} className="ml-1 px-3 py-1.5 text-xs hover:bg-white rounded shadow-sm">Reset</button>
-                   </div>
-                 </div>
-               </div>
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <h2 className="text-xl font-bold text-gray-800">Original Document Preview</h2>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center bg-gray-100 rounded-lg p-1">
+                    <button onClick={handleZoomOut} className="w-8 h-8 flex items-center justify-center hover:bg-white rounded shadow-sm text-xl">-</button>
+                    <span className="text-sm font-semibold px-2">{Math.round(zoomLevel * 100)}%</span>
+                    <button onClick={handleZoomIn} className="w-8 h-8 flex items-center justify-center hover:bg-white rounded shadow-sm text-xl">+</button>
+                    <button onClick={handleZoomReset} className="ml-1 px-3 py-1.5 text-xs hover:bg-white rounded shadow-sm">Reset</button>
+                  </div>
+                </div>
+              </div>
 
-               {isBatch && batchDocIds.length > 0 && (
-                 <div className="flex items-center justify-between bg-indigo-50 border border-indigo-100 rounded-xl p-2.5 mb-3 shadow-inner select-none animate-fade-in">
-                   <button
-                     onClick={() => handleSelectDocument(Math.max(0, activeDocIndex - 1))}
-                     disabled={activeDocIndex === 0}
-                     className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg border transition-all ${
-                       activeDocIndex === 0
-                         ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                         : 'bg-white hover:bg-indigo-100 border-indigo-200 text-indigo-700 cursor-pointer shadow-sm active:scale-95'
-                     }`}
-                   >
-                     ◀ Prev Page
-                   </button>
-                   
-                   <span className="text-xs font-semibold text-indigo-900 bg-white border border-indigo-200 px-3 py-1.5 rounded-lg shadow-sm">
-                     Page <strong className="text-indigo-600 font-bold">{activeDocIndex + 1}</strong> of <strong className="text-indigo-900 font-bold">{batchDocIds.length}</strong>
-                   </span>
+              {isBatch && batchDocIds.length > 0 && (
+                <div className="flex items-center justify-between bg-indigo-50 border border-indigo-100 rounded-xl p-2.5 mb-3 shadow-inner select-none animate-fade-in">
+                  <button
+                    onClick={() => handleSelectDocument(Math.max(0, activeDocIndex - 1))}
+                    disabled={activeDocIndex === 0}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg border transition-all ${activeDocIndex === 0
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'bg-white hover:bg-indigo-100 border-indigo-200 text-indigo-700 cursor-pointer shadow-sm active:scale-95'
+                      }`}
+                  >
+                    ◀ Prev Page
+                  </button>
 
-                   <button
-                     onClick={() => handleSelectDocument(Math.min(batchDocIds.length - 1, activeDocIndex + 1))}
-                     disabled={activeDocIndex === batchDocIds.length - 1}
-                     className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg border transition-all ${
-                       activeDocIndex === batchDocIds.length - 1
-                         ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                         : 'bg-white hover:bg-indigo-100 border-indigo-200 text-indigo-700 cursor-pointer shadow-sm active:scale-95'
-                     }`}
-                   >
-                     Next Page ▶
-                   </button>
-                 </div>
-               )}
+                  <span className="text-xs font-semibold text-indigo-900 bg-white border border-indigo-200 px-3 py-1.5 rounded-lg shadow-sm">
+                    Page <strong className="text-indigo-600 font-bold">{activeDocIndex + 1}</strong> of <strong className="text-indigo-900 font-bold">{batchDocIds.length}</strong>
+                  </span>
 
-               <div className="mb-3">
-                 <BboxToolbar 
-                   toolMode={toolMode}
-                   selectedIds={selectedBboxIds}
-                   bboxCount={bboxList.filter(b=>b.status!=='deleted').length}
-                   onModeChange={setToolMode}
-                   onDelete={handleDeleteBbox}
-                   onMerge={handleMergeBbox}
-                   onUndo={handleUndo}
-                   canUndo={bboxHistory.length > 0}
-                 />
-               </div>
+                  <button
+                    onClick={() => handleSelectDocument(Math.min(batchDocIds.length - 1, activeDocIndex + 1))}
+                    disabled={activeDocIndex === batchDocIds.length - 1}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg border transition-all ${activeDocIndex === batchDocIds.length - 1
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'bg-white hover:bg-indigo-100 border-indigo-200 text-indigo-700 cursor-pointer shadow-sm active:scale-95'
+                      }`}
+                  >
+                    Next Page ▶
+                  </button>
+                </div>
+              )}
 
-               <div className="flex-1 w-full bg-gray-50 rounded-lg border border-gray-200 overflow-auto p-2 min-h-[600px] lg:max-h-[80vh]">
-                   <div style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'top left' }}>
-                      <BboxCanvas 
-                        imageUrl={previewUrl || ""}
-                        bboxList={bboxList}
-                        selectedIds={selectedBboxIds}
-                        toolMode={toolMode}
-                        onBboxChange={updateBboxList}
-                        onSelectChange={setSelectedBboxIds}
-                      />
-                   </div>
-               </div>
+              <div className="mb-3">
+                <BboxToolbar
+                  toolMode={toolMode}
+                  selectedIds={selectedBboxIds}
+                  bboxCount={bboxList.filter(b => b.status !== 'deleted').length}
+                  onModeChange={setToolMode}
+                  onDelete={handleDeleteBbox}
+                  onMerge={handleMergeBbox}
+                  onUndo={handleUndo}
+                  canUndo={bboxHistory.length > 0}
+                />
+              </div>
+
+              <div className="flex-1 w-full bg-gray-50 rounded-lg border border-gray-200 overflow-auto p-2 min-h-[600px] lg:max-h-[80vh]">
+                <div style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'top left' }}>
+                  <BboxCanvas
+                    imageUrl={previewUrl || ""}
+                    bboxList={bboxList}
+                    selectedIds={selectedBboxIds}
+                    toolMode={toolMode}
+                    onBboxChange={updateBboxList}
+                    onSelectChange={setSelectedBboxIds}
+                  />
+                </div>
+              </div>
             </div>
           ) : (
             <div className="flex flex-col gap-5 flex-1">
@@ -808,40 +807,40 @@ export default function Home() {
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-semibold text-gray-700">Upload Document</label>
                   {file && (
-                     <button onClick={handleReset} className="text-xs text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 px-3 py-1.5 rounded-lg font-semibold">New File</button>
+                    <button onClick={handleReset} className="text-xs text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 px-3 py-1.5 rounded-lg font-semibold">New File</button>
                   )}
                 </div>
-                
+
                 {file ? (
-                   <div className="flex flex-col flex-1 border border-gray-300 bg-white shadow-sm rounded-xl p-3 gap-2">
-                     {batchDocIds.length > 0 && (
-                       <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-2.5 mb-2 text-xs font-semibold text-indigo-800 flex justify-between items-center shadow-inner select-none animate-fade-in">
-                         <span>📁 File Type: <strong className="uppercase">{sourceFileType}</strong></span>
-                         <span>📄 Pages/Images: <strong>{totalPages}</strong></span>
-                       </div>
-                     )}
-                     
-                     {isBatch && batchFilenames.length > 0 ? (
-                       <div className="flex flex-col gap-1 max-h-[280px] overflow-y-auto">
-                         {batchFilenames.map((fname, idx) => (
-                           <button key={idx} onClick={() => handleSelectDocument(idx)} className={`text-left text-xs px-3 py-2 rounded-lg border transition-all ${idx === activeDocIndex ? 'bg-[#4F46E5] text-white font-bold shadow-sm' : 'bg-gray-50 hover:bg-blue-50 text-gray-700'}`}>📄 {fname}</button>
-                         ))}
-                       </div>
-                     ) : (
-                       <div className="flex items-center justify-center text-sm bg-blue-50 py-2 rounded"><p className="text-[#4F46E5] font-semibold">📄 {file.name}</p></div>
-                     )}
-                   </div>
-                 ) : (
-                   <label className="flex-1 border-2 border-dashed border-[#A78BFA] rounded-xl flex flex-col items-center justify-center bg-[#eff6ff] hover:bg-blue-100 hover:border-[#4F46E5] cursor-pointer p-8 min-h-[200px] transition-all duration-300">
-                     <input type="file" className="hidden" accept=".jpg,.jpeg,.png,.pdf,.zip" onChange={handleFileChange} />
-                     <span className="text-4xl mb-3 animate-bounce">📄</span>
-                     <p className="text-base font-semibold text-[#4F46E5]">Upload your document</p>
-                     <p className="text-xs text-gray-400 mt-2">Supports: JPG, JPEG, PNG, PDF, ZIP</p>
-                   </label>
-                 )}
+                  <div className="flex flex-col flex-1 border border-gray-300 bg-white shadow-sm rounded-xl p-3 gap-2">
+                    {batchDocIds.length > 0 && (
+                      <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-2.5 mb-2 text-xs font-semibold text-indigo-800 flex justify-between items-center shadow-inner select-none animate-fade-in">
+                        <span>📁 File Type: <strong className="uppercase">{sourceFileType}</strong></span>
+                        <span>📄 Pages/Images: <strong>{totalPages}</strong></span>
+                      </div>
+                    )}
+
+                    {isBatch && batchFilenames.length > 0 ? (
+                      <div className="flex flex-col gap-1 max-h-[280px] overflow-y-auto">
+                        {batchFilenames.map((fname, idx) => (
+                          <button key={idx} onClick={() => handleSelectDocument(idx)} className={`text-left text-xs px-3 py-2 rounded-lg border transition-all ${idx === activeDocIndex ? 'bg-[#4F46E5] text-white font-bold shadow-sm' : 'bg-gray-50 hover:bg-blue-50 text-gray-700'}`}>📄 {fname}</button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center text-sm bg-blue-50 py-2 rounded"><p className="text-[#4F46E5] font-semibold">📄 {file.name}</p></div>
+                    )}
+                  </div>
+                ) : (
+                  <label className="flex-1 border-2 border-dashed border-[#A78BFA] rounded-xl flex flex-col items-center justify-center bg-[#eff6ff] hover:bg-blue-100 hover:border-[#4F46E5] cursor-pointer p-8 min-h-[200px] transition-all duration-300">
+                    <input type="file" className="hidden" accept=".jpg,.jpeg,.png,.pdf,.zip" onChange={handleFileChange} />
+                    <span className="text-4xl mb-3 animate-bounce">📄</span>
+                    <p className="text-base font-semibold text-[#4F46E5]">Upload your document</p>
+                    <p className="text-xs text-gray-400 mt-2">Supports: JPG, JPEG, PNG, PDF, ZIP</p>
+                  </label>
+                )}
               </div>
-              
-              <button 
+
+              <button
                 onClick={handleUploadAndProcess}
                 disabled={!file || loading}
                 className={`w-full py-3.5 rounded-xl font-bold border border-transparent text-lg shadow-md transition-all flex justify-center items-center gap-2 ${!file ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-[#4F46E5] hover:bg-[#4338ca] text-white active:scale-95 cursor-pointer'}`}
@@ -855,163 +854,160 @@ export default function Home() {
         {/* RIGHT PANEL */}
         <div className={`col-span-1 flex flex-col transition-all duration-300 ${editingId !== null ? 'lg:col-span-6' : 'lg:col-span-8'}`}>
           <div className="bg-white rounded-2xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] border border-gray-100 p-6 flex flex-col h-full min-h-[500px]">
-             
-             {/* Edit Mode View */}
-             {editingId !== null && (
-               <div className="flex flex-col flex-1 bg-white border-2 border-indigo-300 rounded-xl shadow-lg p-2 md:p-6 transition-all duration-300 lg:h-[80vh]">
-                 <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-200 shrink-0">
-                   <div>
-                     <h3 className="font-bold text-2xl text-indigo-700">
-                       {primaryResult?.model_name || "Cached Corrections"}
-                     </h3>
-                     <p className="text-sm font-medium text-gray-500 mt-1">Editing Gold Standard</p>
-                   </div>
-                   {!cachedCorrectionsForDoc && ocrResults.length > 1 && (
-                     <button 
-                       onClick={() => setIsCompareModalOpen(true)}
-                       className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded text-sm font-bold border border-indigo-200"
-                     >
-                       🔍 Compare All Models
-                     </button>
-                   )}
-                 </div>
 
-                 {/* Mini Text Editor for Selected BBox */}
-                 {selectedBboxIds.length === 1 && (
-                   <div className="mb-4 bg-indigo-50 border border-indigo-200 p-3 rounded-lg shrink-0 shadow-sm">
-                     <label className="text-xs font-bold text-indigo-700 mb-1 block uppercase tracking-wider">Edit Selected Region</label>
-                     {language === "english" ? (
-                       <textarea 
-                         className="w-full bg-white border border-indigo-200 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none h-16"
-                         value={miniEditorText}
-                         onChange={(e) => handleMiniEditorChange(e.target.value)}
-                         placeholder="Text for the selected bounding box..."
-                       />
-                     ) : (
-                       <ReactTransliterate
-                         value={miniEditorText}
-                         onChangeText={(text) => handleMiniEditorChange(text)}
-                         lang={getTransliterateLang(language) as any}
-                         renderComponent={(props) => (
-                           <textarea 
-                             {...props}
-                             className="w-full bg-white border border-indigo-200 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none h-16"
-                             placeholder="Text for the selected bounding box..."
-                           />
-                         )}
-                       />
-                     )}
-                   </div>
-                 )}
-
-                 {/* Full Text Viewer */}
-                 <div className="flex flex-col flex-1 shrink-0">
-                   <label className="text-xs font-bold text-gray-500 mb-1 block uppercase tracking-wider">Full Page Text (Preview)</label>
-                   <textarea 
-                     className="w-full flex-1 bg-gray-50 text-gray-700 border border-gray-200 p-4 rounded-lg focus:outline-none resize-none min-h-[250px] text-base leading-relaxed"
-                     value={editedText}
-                     readOnly
-                     placeholder="Full text will appear here as you edit regions..."
-                   />
-                 </div>
-
-                 <div className="flex justify-between mt-5 pt-4 border-t border-gray-100 shrink-0 items-center">
-                    <button className="px-6 py-2.5 text-gray-700 bg-white hover:bg-gray-100 border border-gray-300 rounded-lg font-semibold" onClick={() => setEditingId(null)}>
-                      Cancel
-                    </button>
-                    <button className="px-6 py-2.5 text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-md font-semibold flex items-center gap-2" onClick={handleSaveCorrections}>
-                      💾 Save Corrections
-                    </button>
-                 </div>
-               </div>
-             )}
-
-             {/* Primary Card View (Before clicking Edit) */}
-             {editingId === null && primaryResult && !loading && (
-               <div className="flex flex-col h-full animate-fade-in">
-                 {isBatch && batchDocIds.length > 0 && (
-                   <div className="flex items-center justify-between bg-indigo-50 border border-indigo-100 rounded-xl p-3 mb-4 shadow-sm select-none shrink-0">
-                     <button
-                       onClick={() => handleSelectDocument(Math.max(0, activeDocIndex - 1))}
-                       disabled={activeDocIndex === 0}
-                       className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold rounded-lg border transition-all ${
-                         activeDocIndex === 0
-                           ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                           : 'bg-white hover:bg-indigo-100 border-indigo-200 text-indigo-700 cursor-pointer shadow-sm active:scale-95'
-                       }`}
-                     >
-                       ◀ Prev Page
-                     </button>
-                     
-                     <span className="text-sm font-semibold text-indigo-900 bg-white border border-indigo-200 px-4 py-1.5 rounded-lg shadow-sm">
-                       Page <strong className="text-indigo-600 font-bold">{activeDocIndex + 1}</strong> of <strong className="text-indigo-900 font-bold">{batchDocIds.length}</strong>
-                     </span>
-
-                     <button
-                       onClick={() => handleSelectDocument(Math.min(batchDocIds.length - 1, activeDocIndex + 1))}
-                       disabled={activeDocIndex === batchDocIds.length - 1}
-                       className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold rounded-lg border transition-all ${
-                         activeDocIndex === batchDocIds.length - 1
-                           ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                           : 'bg-white hover:bg-indigo-100 border-indigo-200 text-indigo-700 cursor-pointer shadow-sm active:scale-95'
-                       }`}
-                     >
-                       Next Page ▶
-                     </button>
-                   </div>
-                 )}
-
-                 <div className="flex items-center justify-between mb-6 pb-2 border-b border-gray-200 shrink-0">
-                    <h2 className="text-xl font-bold text-gray-800">Best OCR Result</h2>
-                    <button onClick={() => setIsCompareModalOpen(true)} className="bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-full text-sm font-bold border border-indigo-100 hover:bg-indigo-100 shrink-0">
+            {/* Edit Mode View */}
+            {editingId !== null && (
+              <div className="flex flex-col flex-1 bg-white border-2 border-indigo-300 rounded-xl shadow-lg p-2 md:p-6 transition-all duration-300 lg:h-[80vh]">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-200 shrink-0">
+                  <div>
+                    <h3 className="font-bold text-2xl text-indigo-700">
+                      {primaryResult?.model_name || "Cached Corrections"}
+                    </h3>
+                    <p className="text-sm font-medium text-gray-500 mt-1">Editing Gold Standard</p>
+                  </div>
+                  {!cachedCorrectionsForDoc && ocrResults.length > 1 && (
+                    <button
+                      onClick={() => setIsCompareModalOpen(true)}
+                      className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded text-sm font-bold border border-indigo-200"
+                    >
                       🔍 Compare All Models
                     </button>
-                 </div>
+                  )}
+                </div>
 
-                 <div className={`rounded-xl border-2 shadow-md p-6 flex flex-col flex-1 ${
-                   primaryResult.model_name.includes("Fused Result") 
-                     ? "bg-yellow-50 border-orange-200" 
-                     : "bg-white border-indigo-200"
-                 }`}>
-                   <div className="flex justify-between items-center mb-4">
-                     <div>
-                       <span className={`font-bold text-2xl ${primaryResult.model_name.includes("Fused Result") ? "text-orange-700" : "text-indigo-700"}`}>{primaryResult.model_name}</span>
-                       <span className="ml-3 bg-amber-400 text-amber-900 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
-                         {primaryResult.model_name.includes("Fused Result") ? "★ Auto Selected / Recommended" : "★ Auto-Selected Best"}
-                       </span>
-                     </div>
+                {/* Mini Text Editor for Selected BBox */}
+                {selectedBboxIds.length === 1 && (
+                  <div className="mb-4 bg-indigo-50 border border-indigo-200 p-3 rounded-lg shrink-0 shadow-sm">
+                    <label className="text-xs font-bold text-indigo-700 mb-1 block uppercase tracking-wider">Edit Selected Region</label>
+                    {language === "english" ? (
+                      <textarea
+                        className="w-full bg-white border border-indigo-200 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none h-16"
+                        value={miniEditorText}
+                        onChange={(e) => handleMiniEditorChange(e.target.value)}
+                        placeholder="Text for the selected bounding box..."
+                      />
+                    ) : (
+                      <ReactTransliterate
+                        value={miniEditorText}
+                        onChangeText={(text) => handleMiniEditorChange(text)}
+                        lang={getTransliterateLang(language) as any}
+                        renderComponent={(props) => (
+                          <textarea
+                            {...props}
+                            className="w-full bg-white border border-indigo-200 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none h-16"
+                            placeholder="Text for the selected bounding box..."
+                          />
+                        )}
+                      />
+                    )}
+                  </div>
+                )}
 
-                   </div>
+                {/* Full Text Viewer */}
+                <div className="flex flex-col flex-1 shrink-0">
+                  <label className="text-xs font-bold text-gray-500 mb-1 block uppercase tracking-wider">Full Page Text (Preview)</label>
+                  <textarea
+                    className="w-full flex-1 bg-gray-50 text-gray-700 border border-gray-200 p-4 rounded-lg focus:outline-none resize-none min-h-[250px] text-base leading-relaxed"
+                    value={editedText}
+                    readOnly
+                    placeholder="Full text will appear here as you edit regions..."
+                  />
+                </div>
 
-                   <div className="text-gray-700 flex-1 flex flex-col gap-2 overflow-auto bg-gray-50 p-5 rounded-lg border border-gray-100">
-                     <p className="whitespace-pre-wrap flex-1 text-base leading-relaxed">
-                       {primaryResult.corrected_text || primaryResult.extracted_text}
-                     </p>
-                   </div>
-                     
-                   <div className="mt-6 flex justify-end">
-                     <button onClick={() => handleStartEditing(primaryResult.id)} className="flex items-center gap-2 px-6 py-3 text-base font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition-all active:scale-95">
-                       ✏️ Edit Text & Bboxes
-                     </button>
-                   </div>
-                 </div>
-               </div>
-             )}
+                <div className="flex justify-between mt-5 pt-4 border-t border-gray-100 shrink-0 items-center">
+                  <button className="px-6 py-2.5 text-gray-700 bg-white hover:bg-gray-100 border border-gray-300 rounded-lg font-semibold" onClick={() => setEditingId(null)}>
+                    Cancel
+                  </button>
+                  <button className="px-6 py-2.5 text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-md font-semibold flex items-center gap-2" onClick={handleSaveCorrections}>
+                    💾 Save Corrections
+                  </button>
+                </div>
+              </div>
+            )}
 
-             {/* Empty State */}
-             {ocrResults.length === 0 && !loading && !cachedCorrectionsForDoc && (
-               <div className="col-span-full h-full flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 p-10 text-center">
-                  <span className="text-6xl mb-4">🔍</span>
-                  <p className="text-xl font-semibold text-gray-600 mb-2">No Results Yet</p>
-                  <p className="text-md text-gray-500 max-w-md">Upload a document on the left panel to extract text.</p>
-               </div>
-             )}
+            {/* Primary Card View (Before clicking Edit) */}
+            {editingId === null && primaryResult && !loading && (
+              <div className="flex flex-col h-full animate-fade-in">
+                {isBatch && batchDocIds.length > 0 && (
+                  <div className="flex items-center justify-between bg-indigo-50 border border-indigo-100 rounded-xl p-3 mb-4 shadow-sm select-none shrink-0">
+                    <button
+                      onClick={() => handleSelectDocument(Math.max(0, activeDocIndex - 1))}
+                      disabled={activeDocIndex === 0}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold rounded-lg border transition-all ${activeDocIndex === 0
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                        : 'bg-white hover:bg-indigo-100 border-indigo-200 text-indigo-700 cursor-pointer shadow-sm active:scale-95'
+                        }`}
+                    >
+                      ◀ Prev Page
+                    </button>
 
-             {loading && (
-               <div className="col-span-full h-full flex flex-col items-center justify-center text-indigo-600 bg-indigo-50 rounded-xl border border-indigo-200 p-10">
-                 <p className="text-xl font-semibold">Extracting text...</p>
-               </div>
-             )}
+                    <span className="text-sm font-semibold text-indigo-900 bg-white border border-indigo-200 px-4 py-1.5 rounded-lg shadow-sm">
+                      Page <strong className="text-indigo-600 font-bold">{activeDocIndex + 1}</strong> of <strong className="text-indigo-900 font-bold">{batchDocIds.length}</strong>
+                    </span>
+
+                    <button
+                      onClick={() => handleSelectDocument(Math.min(batchDocIds.length - 1, activeDocIndex + 1))}
+                      disabled={activeDocIndex === batchDocIds.length - 1}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold rounded-lg border transition-all ${activeDocIndex === batchDocIds.length - 1
+                        ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                        : 'bg-white hover:bg-indigo-100 border-indigo-200 text-indigo-700 cursor-pointer shadow-sm active:scale-95'
+                        }`}
+                    >
+                      Next Page ▶
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between mb-6 pb-2 border-b border-gray-200 shrink-0">
+                  <h2 className="text-xl font-bold text-gray-800">Best OCR Result</h2>
+                  <button onClick={() => setIsCompareModalOpen(true)} className="bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-full text-sm font-bold border border-indigo-100 hover:bg-indigo-100 shrink-0">
+                    🔍 Compare All Models
+                  </button>
+                </div>
+
+                <div className={`rounded-xl border-2 shadow-md p-6 flex flex-col flex-1 ${primaryResult.model_name.includes("Fused Result")
+                  ? "bg-yellow-50 border-orange-200"
+                  : "bg-white border-indigo-200"
+                  }`}>
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <span className={`font-bold text-2xl ${primaryResult.model_name.includes("Fused Result") ? "text-orange-700" : "text-indigo-700"}`}>{primaryResult.model_name}</span>
+                      <span className="ml-3 bg-amber-400 text-amber-900 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                        {primaryResult.model_name.includes("Fused Result") ? "★ Auto Selected / Recommended" : "★ Auto-Selected Best"}
+                      </span>
+                    </div>
+
+                  </div>
+
+                  <div className="text-gray-700 flex-1 flex flex-col gap-2 overflow-auto bg-gray-50 p-5 rounded-lg border border-gray-100">
+                    <p className="whitespace-pre-wrap flex-1 text-base leading-relaxed">
+                      {primaryResult.corrected_text || primaryResult.extracted_text}
+                    </p>
+                  </div>
+
+                  <div className="mt-6 flex justify-end">
+                    <button onClick={() => handleStartEditing(primaryResult.id)} className="flex items-center gap-2 px-6 py-3 text-base font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition-all active:scale-95">
+                      ✏️ Edit Text & Bboxes
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Empty State */}
+            {ocrResults.length === 0 && !loading && !cachedCorrectionsForDoc && (
+              <div className="col-span-full h-full flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 p-10 text-center">
+                <span className="text-6xl mb-4">🔍</span>
+                <p className="text-xl font-semibold text-gray-600 mb-2">No Results Yet</p>
+                <p className="text-md text-gray-500 max-w-md">Upload a document on the left panel to extract text.</p>
+              </div>
+            )}
+
+            {loading && (
+              <div className="col-span-full h-full flex flex-col items-center justify-center text-indigo-600 bg-indigo-50 rounded-xl border border-indigo-200 p-10">
+                <p className="text-xl font-semibold">Extracting text...</p>
+              </div>
+            )}
           </div>
         </div>
       </main>
@@ -1031,15 +1027,7 @@ export default function Home() {
         />
       )}
 
-      {isHelpOpen && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={()=>setIsHelpOpen(false)}>
-           <div className="bg-white p-6 rounded-xl max-w-md" onClick={e=>e.stopPropagation()}>
-             <h3 className="font-bold text-lg mb-2">Help</h3>
-             <p className="text-sm text-gray-600 mb-4">Upload a file. The best OCR model is auto-selected. Edit bounding boxes visually, modify text, and save as the Gold Standard.</p>
-             <button onClick={()=>setIsHelpOpen(false)} className="w-full bg-indigo-600 text-white rounded py-2">Got it</button>
-           </div>
-        </div>
-      )}
+      <HelpPanel isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
     </div>
   );
 }
