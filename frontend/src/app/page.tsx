@@ -700,7 +700,7 @@ export default function Home() {
           {user && (
             <button
               onClick={logout}
-              className="flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 hover:bg-red-100 text-red-700 rounded-lg shadow-sm transition-colors cursor-pointer font-bold"
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-600 hover:text-gray-900 rounded-lg shadow-sm transition-colors cursor-pointer font-medium"
             >
               🚪 Logout
             </button>
