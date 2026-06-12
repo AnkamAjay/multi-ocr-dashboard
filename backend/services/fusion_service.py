@@ -6,11 +6,16 @@ from wordfreq import zipf_frequency
 # -------------------------------
 # 🔹 BBOX MATCH
 # -------------------------------
-def bbox_close(b1, b2, threshold=10):
-    return (
-        abs(b1["x"] - b2["x"]) < threshold
-        and abs(b1["y"] - b2["y"]) < threshold
-    )
+def bbox_close(b1, b2):
+    dx = abs(b1["x"] - b2["x"])
+    dy = abs(b1["y"] - b2["y"])
+    w1, h1 = b1.get("w"), b1.get("h")
+    w2, h2 = b2.get("w"), b2.get("h")
+    
+    if w1 is not None and h1 is not None and w2 is not None and h2 is not None:
+        return dx < (max(w1, w2) * 0.4) and dy < (max(h1, h2) * 0.4)
+    else:
+        return dx < 30 and dy < 30
 
 
 # -------------------------------
@@ -174,7 +179,8 @@ def fuse(model_regions):
             "candidates": all_candidates,
             "has_bbox": True,
             "line": r1.get("line", 0),
-            "x": b1["x"]
+            "x": b1["x"],
+            "y": b1["y"]
         })
 
     return fused
@@ -184,42 +190,41 @@ def fuse(model_regions):
 # 🔹 GROUP BY LINE
 # -------------------------------
 def group_lines(fused):
-
+    if not fused:
+        return {}
+        
+    fused_sorted = sorted(fused, key=lambda w: w.get("y", 0))
     lines = {}
-
-    for w in fused:
-        lines.setdefault(w["line"], []).append(w)
+    current_line_idx = 0
+    lines[current_line_idx] = [fused_sorted[0]]
+    current_y = fused_sorted[0].get("y", 0)
+    
+    for w in fused_sorted[1:]:
+        y = w.get("y", 0)
+        # Group words into the same line if their y-difference is small
+        if abs(y - current_y) < 15:
+            lines[current_line_idx].append(w)
+        else:
+            current_line_idx += 1
+            lines[current_line_idx] = [w]
+            current_y = y
 
     for ln in lines:
         lines[ln].sort(key=lambda x: x["x"])
 
-    return dict(sorted(lines.items()))
+    return lines
 
 
 # -------------------------------
 # 🔹 FORMAT OUTPUT
 # -------------------------------
 def format_text(lines):
-
     output = ""
-
     for line in lines:
-
         for w in lines[line]:
-
-            word = w["text"]
-
-            if w["corrected"]:
-                word = f"_{word}_"
-
-            if w["has_bbox"]:
-                word = f"[{word}]"
-
-            output += word + " "
-
-        output += "\n\n"
-
-    return output
+            output += w["text"] + " "
+        output = output.strip() + "\n\n"
+    return output.strip()
 
 
 # -------------------------------
@@ -253,10 +258,17 @@ def run_fusion(ocr_results):
                 
         model_regions.append(regions)
         
-    if not model_regions or not model_regions[0]:
+    if not model_regions:
         return "", 0, {"text": "", "regions": []}
 
-    fused_results = fuse(model_regions)
+    # Filter out empty and sort by region count descending to pick the best anchor
+    valid_models = [m for m in model_regions if m]
+    if not valid_models:
+        return "", 0, {"text": "", "regions": []}
+        
+    valid_models.sort(key=len, reverse=True)
+    
+    fused_results = fuse(valid_models)
     
     # Calculate confidence score
     total_votes = 0
@@ -279,7 +291,7 @@ def run_fusion(ocr_results):
     
     # Reconstruct raw_json so bounding boxes can be drawn in the UI
     # We deep-copy the anchor regions and replace the label/text with the fused text
-    anchor_regions = model_regions[0]
+    anchor_regions = valid_models[0]
     new_regions = []
     
     for idx, orig_region in enumerate(anchor_regions):

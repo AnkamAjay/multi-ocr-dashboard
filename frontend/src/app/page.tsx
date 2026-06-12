@@ -378,11 +378,11 @@ export default function Home() {
       let placed = false;
       if (lines.length > 0) {
         const currentLine = lines[lines.length - 1];
-        const boxCenterY = box.y + box.h / 2;
-        const lineTop = Math.min(...currentLine.map(b => b.y));
-        const lineBottom = Math.max(...currentLine.map(b => b.y + b.h));
-
-        if (boxCenterY >= lineTop && boxCenterY <= lineBottom) {
+        // Use the average y and h of the line, or just the first element to avoid outlier boxes expanding the line indefinitely
+        const referenceY = currentLine[0].y;
+        const referenceH = currentLine[0].h;
+        // If the box's y is within a reasonable threshold (e.g. half the height of the reference box), it belongs to the same line
+        if (Math.abs(box.y - referenceY) < Math.max(15, referenceH * 0.6)) {
           currentLine.push(box);
           placed = true;
         }
@@ -457,7 +457,6 @@ export default function Home() {
     const validBboxes = bboxes.filter(b => b.status !== 'deleted');
     if (validBboxes.length === 0) return "";
 
-    // We can reuse the same sorting logic
     const sortedLines: BBox[][] = [];
     const sortedByY = [...validBboxes].sort((a, b) => a.y - b.y);
 
@@ -465,11 +464,9 @@ export default function Home() {
       let placed = false;
       if (sortedLines.length > 0) {
         const currentLine = sortedLines[sortedLines.length - 1];
-        const boxCenterY = box.y + box.h / 2;
-        const lineTop = Math.min(...currentLine.map(b => b.y));
-        const lineBottom = Math.max(...currentLine.map(b => b.y + b.h));
-
-        if (boxCenterY >= lineTop && boxCenterY <= lineBottom) {
+        const referenceY = currentLine[0].y;
+        const referenceH = currentLine[0].h;
+        if (Math.abs(box.y - referenceY) < Math.max(15, referenceH * 0.6)) {
           currentLine.push(box);
           placed = true;
         }
@@ -481,7 +478,7 @@ export default function Home() {
 
     return sortedLines.map(line => {
       return line.sort((a, b) => a.x - b.x).map(b => b.text).join(' ');
-    }).join('\n');
+    }).join('\n\n');
   };
 
   useEffect(() => {

@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session # type: ignore
 from typing import List
 import httpx # type: ignore
 import asyncio
+import time
+import uuid
 
 import models, schemas # type: ignore
 from database import get_db # type: ignore
@@ -11,13 +13,15 @@ from services import fusion_service
 router = APIRouter()
 
 
-async def run_page_ocr(file_path: str, language: str, version: str, modality: str, layout_model: str):
+async def run_page_ocr(file_path: str, language: str, version: str, modality: str, layout_model: str, cfg_name: str = "OCR"):
     url = "https://ilocr.iiit.ac.in/pageocr/api"
     try:
         import os
         import fitz  # type: ignore
         
-        filename = os.path.basename(file_path)
+        # Append a UUID to avoid filename collisions on the server side
+        original_filename = os.path.basename(file_path)
+        filename = f"{uuid.uuid4().hex[:8]}_{original_filename}"
         upload_path = file_path
         content_type = "image/jpeg"
         
@@ -50,7 +54,12 @@ async def run_page_ocr(file_path: str, language: str, version: str, modality: st
                     "binarize": "false"
                 }
                 
-                response = await client.post(url, data=data, files=files, timeout=15.0)
+                print(f"[{cfg_name}] Sending OCR request for {filename}...")
+                start_time = time.time()
+                response = await client.post(url, data=data, files=files, timeout=60.0)
+                duration = time.time() - start_time
+                print(f"[{cfg_name}] Request completed in {duration:.2f}s with status {response.status_code}")
+                
                 if response.status_code == 200:
                     resp_json = response.json()
                     
@@ -68,82 +77,9 @@ async def run_page_ocr(file_path: str, language: str, version: str, modality: st
                 else:
                     return f"API Error HTTP {response.status_code}: {response.text}", None
     except Exception as e:
-        print(f"Page OCR API failed: {repr(e)}")
-        # Generate mock OCR fallback data so presentation functions perfectly!
-        try:
-            import os
-            from PIL import Image
-            width, height = 800, 1000
-            if os.path.exists(file_path):
-                try:
-                    with Image.open(file_path) as img:
-                        width, height = img.size
-                except Exception:
-                    pass
-            
-            # Select words based on language
-            english_words = ["Welcome", "to", "the", "live", "OCR", "presentation.", 
-                             "This", "is", "a", "highly", "interactive", "bounding", 
-                             "box", "annotation", "interface.", "Modify", "and", "save", 
-                             "corrections", "to", "see", "real-time", "analytics."]
-            hindi_words = ["स्वागत", "है", "इस", "लाइव", "प्रदर्शन", "में।",
-                           "यह", "एक", "इंटरैक्टिव", "बाउंडिंग", "बॉक्स", "इंटरफ़ेस", "है।",
-                           "सहेजें", "और", "संशोधन", "करके", "विश्लेषण", "देखें।"]
-            telugu_words = ["స్వాగతం", "ఈ", "లైవ్", "ప్రదర్శనకు.", "ఇది", "ఇంటరాక్టివ్",
-                            "బౌండింగ్", "బాక్స్", "ఇంటర్ఫేస్.", "మార్పులు", "చేసి", 
-                            "సేవ్", "చేయండి", "మరియు", "విశ్లేషణలు", "చూడండి."]
-            
-            if language.lower() == "hindi":
-                words = hindi_words
-            elif language.lower() == "telugu":
-                words = telugu_words
-            else:
-                words = english_words
-                
-            regions = []
-            text_lines = []
-            
-            num_lines = 4
-            words_per_line = 4
-            
-            start_y = int(height * 0.15)
-            line_spacing = int(height * 0.15)
-            box_h = int(height * 0.06)
-            
-            word_idx = 0
-            for l in range(num_lines):
-                line_words = []
-                y = start_y + l * line_spacing
-                
-                start_x = int(width * 0.12)
-                col_width = int(width * 0.20)
-                box_w = int(width * 0.16)
-                
-                for w in range(words_per_line):
-                    x = start_x + w * col_width
-                    word = words[word_idx % len(words)]
-                    word_idx += 1
-                    line_words.append(word)
-                    
-                    regions.append({
-                        "bounding_box": {"x": x, "y": y, "w": box_w, "h": box_h},
-                        "label": word,
-                        "text": "",
-                        "line": l + 1
-                    })
-                text_lines.append(" ".join(line_words))
-            
-            full_text = "\n".join(text_lines)
-            
-            # Notice text for user feedback
-            notice_text = f"[API OFFLINE - MOCK FALLBACK] Note: IIIT Hyderabad OCR API is currently offline. Running local mock dataset for demonstration."
-            full_text = notice_text + "\n\n" + full_text
-            
-            return full_text, {"text": full_text, "regions": regions}
-        except Exception as mock_err:
-            print(f"Fallback generation failed: {mock_err}")
-            err_msg = str(e) if str(e) else repr(e)
-            return f"Failed to connect to Page_OCR API. Error: {err_msg}", None
+        print(f"[{cfg_name}] Page OCR API failed: {repr(e)}")
+        err_msg = str(e) if str(e) else repr(e)
+        return f"Failed to connect to Page_OCR API. Error: {err_msg}", None
 
 
 @router.post("/process", response_model=List[schemas.OCRResultResponse])
@@ -175,12 +111,11 @@ async def process_document(document_id: int, language: str = "english", modality
     else:
         raise HTTPException(status_code=400, detail="Invalid modality provided")
 
-    # Run OCR models in parallel
-    tasks = [
-        run_page_ocr(doc.file_path, language.lower(), cfg["version"], modality.lower(), cfg["layout"])
-        for cfg in configs
-    ]
-    results = await asyncio.gather(*tasks)
+    # Run OCR models sequentially to reduce API overload
+    results = []
+    for cfg in configs:
+        res = await run_page_ocr(doc.file_path, language.lower(), cfg["version"], modality.lower(), cfg["layout"], cfg["name"])
+        results.append(res)
 
     ocr_results = []
     for idx, cfg in enumerate(configs):
@@ -201,34 +136,40 @@ async def process_document(document_id: int, language: str = "english", modality
     db.commit()
 
     # --- Run Fusion Algorithm ---
-    try:
-        final_text, confidence, reconstructed_json = fusion_service.run_fusion(ocr_results)
-        
-        # Save to fusion_results table
-        fusion_record = models.FusionResult(
-            document_id=doc.id,
-            fused_text=final_text,
-            confidence_score=float(confidence),
-            model_count=len(ocr_results)
-        )
-        db.add(fusion_record)
-        
-        # Save as an OCRResult for seamless UI integration
-        fused_ocr_res = models.OCRResult(
-            document_id=doc.id,
-            model_name=f"⭐ Fused Result (Recommended) | Confidence: {int(confidence)}%",
-            extracted_text=final_text,
-            error_count=0,
-            raw_json=reconstructed_json
-        )
-        db.add(fused_ocr_res)
-        db.commit()
-        db.refresh(fused_ocr_res)
-        
-        # Insert Fused Result at the beginning of the list
-        ocr_results.insert(0, fused_ocr_res)
-    except Exception as e:
-        print(f"Fusion failed: {e}")
+    # Only fuse successful models
+    successful_results = [r for r in ocr_results if r.raw_json is not None]
+    
+    if successful_results:
+        try:
+            final_text, confidence, reconstructed_json = fusion_service.run_fusion(successful_results)
+            
+            # Save to fusion_results table
+            fusion_record = models.FusionResult(
+                document_id=doc.id,
+                fused_text=final_text,
+                confidence_score=float(confidence),
+                model_count=len(successful_results)
+            )
+            db.add(fusion_record)
+            
+            # Save as an OCRResult for seamless UI integration
+            fused_ocr_res = models.OCRResult(
+                document_id=doc.id,
+                model_name=f"⭐ Fused Result (Recommended) | Confidence: {int(confidence)}%",
+                extracted_text=final_text,
+                error_count=0,
+                raw_json=reconstructed_json
+            )
+            db.add(fused_ocr_res)
+            db.commit()
+            db.refresh(fused_ocr_res)
+            
+            # Insert Fused Result at the beginning of the list
+            ocr_results.insert(0, fused_ocr_res)
+        except Exception as e:
+            import traceback
+            print(f"Fusion failed: {e}")
+            traceback.print_exc()
 
     for res in ocr_results:
         db.refresh(res)
