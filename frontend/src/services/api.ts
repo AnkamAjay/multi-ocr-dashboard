@@ -67,6 +67,10 @@ export const processDocument = async (documentId: number, language: string, moda
     return response.data;
 };
 
+export const createDocumentStream = (documentId: number): EventSource => {
+    return new EventSource(`${API_BASE_URL}/stream/${documentId}`);
+};
+
 export const saveAnnotation = async (ocrResultId: number, editedText: string) => {
     const response = await axios.post(`${API_BASE_URL}/save?ocr_result_id=${ocrResultId}`, {
         edited_text: editedText

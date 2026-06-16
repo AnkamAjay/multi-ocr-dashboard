@@ -25,6 +25,9 @@ class Document(Base):
     corrected_json = Column(JSON, nullable=True)                # Final bbox+text list (the human-verified Gold Standard)
     is_corrected = Column(Boolean, default=False)               # True after the first "Save Corrections"
 
+    # OCR Job Tracking
+    status = Column(String, default="PENDING", index=True)      # PENDING, PROCESSING, COMPLETED, FAILED
+
     ocr_results = relationship("OCRResult", back_populates="document")
 
 class OCRResult(Base):

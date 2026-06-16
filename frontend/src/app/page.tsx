@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import {
   uploadDocument,
   processDocument,
+  createDocumentStream,
   saveAnnotation,
   saveBboxCorrections,
   getResults,
@@ -156,47 +157,124 @@ export default function Home() {
           const sft = localStorage.getItem('sourceFileType') || 'IMAGE';
           const tp = parseInt(localStorage.getItem('totalPages') || '1', 10);
 
-          setBatchDocIds(docIds);
-          setBatchFilePaths(filePaths);
-          setBatchFilenames(filenames);
-          setActiveDocIndex(docIndex);
-          setIsBatch(batch);
-          setSourceFileType(sft);
-          setTotalPages(tp);
-          if (fname) {
-            setFile({ name: fname, type: ftype } as any);
-          }
+          const restoreSession = async () => {
+            const resultsMap: Record<number, any[]> = {};
+            let hasValidDoc = false;
+            let cachedCorrectedJson: BBox[] | null = null;
+            let hasCachedCorrection = false;
 
-          // Fetch results to rebuild session state
-          docIds.forEach(async (id: number) => {
             try {
-              const res = await getResults(id);
-              if (res.ocr_results && res.ocr_results.length > 0) {
-                setBatchResults(prev => ({ ...prev, [id]: res.ocr_results }));
-                if (id === docIds[docIndex]) {
+              await Promise.all(docIds.map(async (id: number) => {
+                try {
+                  const res = await getResults(id);
+                  if (res && res.id) {
+                    hasValidDoc = true;
+                    if (res.ocr_results && res.ocr_results.length > 0) {
+                      resultsMap[id] = res.ocr_results;
+                    }
+                    if (id === docIds[docIndex] && res.is_corrected && res.corrected_json) {
+                      hasCachedCorrection = true;
+                      cachedCorrectedJson = res.corrected_json;
+                    }
+                  }
+                } catch (e) {
+                  console.error(`Failed to fetch doc ${id}`, e);
+                }
+              }));
+
+              if (!hasValidDoc) {
+                throw new Error("Invalid session docs or no docs found");
+              }
+
+              setBatchDocIds(docIds);
+              setBatchFilePaths(filePaths);
+              setBatchFilenames(filenames);
+              setActiveDocIndex(docIndex);
+              setIsBatch(batch);
+              setSourceFileType(sft);
+              setTotalPages(tp);
+              if (fname) {
+                setFile({ name: fname, type: ftype } as any);
+              }
+              setBatchResults(resultsMap);
+
+              const currentDocId = docIds[docIndex];
+              if (hasCachedCorrection && cachedCorrectedJson) {
+                setCachedCorrectionsForDoc(cachedCorrectedJson);
+                setBboxList(cachedCorrectedJson);
+                setInitialBboxList(cachedCorrectedJson);
+                setEditedText(cachedCorrectedJson.map((b: BBox) => b.text).join('\n'));
+              } else if (resultsMap[currentDocId] && resultsMap[currentDocId].length > 0) {
+                // Determine best model for the current doc
+                const res = resultsMap[currentDocId];
+                const fused = res.find(r => r.model_name.includes("Fused Result"));
+                if (fused) {
+                  setPrimaryResultId(fused.id);
+                } else {
                   const wordCount = (t: string) => (t || "").trim().split(/\s+/).filter(Boolean).length;
-                  const best = res.ocr_results.reduce((b: any, c: any) =>
+                  const best = res.reduce((b: any, c: any) =>
                     wordCount(c.extracted_text) > wordCount(b.extracted_text) ? c : b
-                    , res.ocr_results[0]);
+                  , res[0]);
                   setPrimaryResultId(best.id);
                 }
               }
-              if (id === docIds[docIndex] && res.is_corrected && res.corrected_json) {
-                setCachedCorrectionsForDoc(res.corrected_json);
-                setBboxList(res.corrected_json);
-                setInitialBboxList(res.corrected_json);
-                setEditedText(res.corrected_json.map((b: BBox) => b.text).join('\n'));
-              }
             } catch (err) {
-              console.error("Failed to restore batch doc results:", err);
+              console.error("Failed to restore session, resetting:", err);
+              localStorage.removeItem('batchDocIds');
+              localStorage.removeItem('batchFilePaths');
+              localStorage.removeItem('batchFilenames');
+              localStorage.removeItem('activeDocIndex');
+              localStorage.removeItem('isBatch');
+              localStorage.removeItem('sourceFileType');
+              localStorage.removeItem('totalPages');
+              localStorage.removeItem('file_name');
+              localStorage.removeItem('file_type');
             }
-          });
+          };
+          restoreSession();
         }
       } catch (e) {
         console.error("Error parsing localStorage state:", e);
       }
     }
   }, []);
+
+  // SSE Stream Effect for active document
+  useEffect(() => {
+    if (!activeDocId) return;
+
+    // Check if we already have fused result (fully complete)
+    if (batchResults[activeDocId] && batchResults[activeDocId].some((r: any) => r.model_name.includes("Fused Result"))) {
+      return; 
+    }
+
+    const stream = createDocumentStream(activeDocId);
+    
+    const handleModelUpdate = (e: MessageEvent) => {
+      const result = JSON.parse(e.data);
+      setBatchResults(prev => {
+        const current = prev[activeDocId] || [];
+        if (!current.find((r: any) => r.id === result.id)) {
+          let next;
+          if (result.model_name.includes("Fused Result")) {
+            next = [result, ...current];
+          } else {
+            next = [...current, result];
+          }
+          autoSelectBestModel(next);
+          return { ...prev, [activeDocId]: next };
+        }
+        return prev;
+      });
+    };
+
+    stream.addEventListener("MODEL_COMPLETED", handleModelUpdate);
+    stream.addEventListener("FUSION_COMPLETED", handleModelUpdate);
+
+    return () => {
+      stream.close();
+    };
+  }, [activeDocId]); // ONLY activeDocId, so it doesn't reconnect on every state update
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -224,7 +302,15 @@ export default function Home() {
         const data = await getResults(docId);
         if (data.ocr_results && data.ocr_results.length > 0) {
           setBatchResults(prev => ({ ...prev, [docId]: data.ocr_results }));
-          autoSelectBestModel(data.ocr_results);
+          
+          // Fix Issue #2: Only update best model if the fetched docId is still the active one
+          // We can check this safely by doing it in a React effect, but for immediate response:
+          setBatchDocIds(prevIds => {
+             if (prevIds[index] === docId) {
+                autoSelectBestModel(data.ocr_results);
+             }
+             return prevIds;
+          });
         } else if (data.is_corrected && data.corrected_json) {
           // Cached logic
           setCachedCorrectionsForDoc(data.corrected_json);
@@ -245,8 +331,24 @@ export default function Home() {
 
   const autoSelectBestModel = (results: any[]) => {
     if (!results || results.length === 0) return;
-    const fused = results.find(r => r.model_name.includes("Fused Result" ));
-    const best = fused || results[0];
+    const fused = results.find(r => r.model_name.includes("Fused Result"));
+    if (fused) {
+      setPrimaryResultId(fused.id);
+      return;
+    }
+
+    const wordCount = (t: string) => (t || "").trim().split(/\s+/).filter(Boolean).length;
+    
+    const best = results.reduce((b: any, c: any) => {
+        const confB = parseInt(b.model_name.match(/Confidence:\s*(\d+)/)?.[1] || "0", 10);
+        const confC = parseInt(c.model_name.match(/Confidence:\s*(\d+)/)?.[1] || "0", 10);
+        
+        if (confC > confB) return c;
+        if (confB > confC) return b;
+        
+        return wordCount(c.extracted_text) > wordCount(b.extracted_text) ? c : b;
+    }, results[0]);
+    
     setPrimaryResultId(best.id);
   };
 
@@ -291,25 +393,23 @@ export default function Home() {
       const total = batchData.document_ids.length;
       setBatchProgress({ done: 0, total });
 
-      let firstDocResults = null;
+      let completedCount = 0;
 
-      for (let i = 0; i < total; i++) {
-        const docId = batchData.document_ids[i];
-        const results = await processDocument(docId, language, modality);
-        setBatchResults(prev => ({ ...prev, [docId]: results }));
-        setBatchProgress({ done: i + 1, total });
-
-        if (i === 0) firstDocResults = results;
-      }
-
-      if (firstDocResults && firstDocResults.length > 0) {
-        autoSelectBestModel(firstDocResults);
-      }
+      // Fire all process endpoints so they enqueue in the background
+      await Promise.all(
+        batchData.document_ids.map(async (docId: number) => {
+          try {
+            await processDocument(docId, language, modality);
+          } catch (err) {
+            console.error(`Error enqueuing document ${docId}:`, err);
+          }
+        })
+      );
 
       if (batchData.is_batch) {
-        showSuccess(`All ${total} documents processed successfully ✅`);
+        showSuccess(`Batch processing started for ${total} documents. Streaming results... 🚀`);
       } else {
-        showSuccess("Document processed successfully ✅");
+        showSuccess("Document processing started. Streaming results... 🚀");
       }
     } catch (error) {
       console.error("Error processing document:", error);
@@ -991,18 +1091,28 @@ export default function Home() {
               </div>
             )}
 
-            {/* Empty State */}
+            {/* Empty State / Processing State */}
             {ocrResults.length === 0 && !loading && !cachedCorrectionsForDoc && (
               <div className="col-span-full h-full flex flex-col items-center justify-center text-gray-400 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 p-10 text-center">
-                <span className="text-6xl mb-4">🔍</span>
-                <p className="text-xl font-semibold text-gray-600 mb-2">No Results Yet</p>
-                <p className="text-md text-gray-500 max-w-md">Upload a document on the left panel to extract text.</p>
+                {batchDocIds.length > 0 ? (
+                  <>
+                    <span className="text-6xl mb-4 animate-spin">⏳</span>
+                    <p className="text-xl font-semibold text-indigo-600 mb-2">Processing OCR in Background...</p>
+                    <p className="text-md text-gray-500 max-w-md">Models will appear here progressively as they complete.</p>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-6xl mb-4">🔍</span>
+                    <p className="text-xl font-semibold text-gray-600 mb-2">No Results Yet</p>
+                    <p className="text-md text-gray-500 max-w-md">Upload a document on the left panel to extract text.</p>
+                  </>
+                )}
               </div>
             )}
 
             {loading && (
               <div className="col-span-full h-full flex flex-col items-center justify-center text-indigo-600 bg-indigo-50 rounded-xl border border-indigo-200 p-10">
-                <p className="text-xl font-semibold">Extracting text...</p>
+                <p className="text-xl font-semibold">Uploading document...</p>
               </div>
             )}
           </div>

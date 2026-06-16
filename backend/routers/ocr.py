@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException # type: ignore
 from sqlalchemy.orm import Session # type: ignore
 from typing import List
@@ -7,11 +8,23 @@ import time
 import uuid
 
 import models, schemas # type: ignore
-from database import get_db # type: ignore
+from database import get_db, SessionLocal # type: ignore
 from services import fusion_service
+from services.stream_manager import stream_manager
+from fastapi import BackgroundTasks
 
 router = APIRouter()
 
+# Semaphore to limit concurrent requests to the external OCR API.
+# Prevents overloading the server when multiple pages/models run in parallel.
+OCR_API_SEMAPHORE = asyncio.Semaphore(6)
+
+logger = logging.getLogger("ocr_service")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    ch = logging.StreamHandler()
+    ch.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(ch)
 
 async def run_page_ocr(file_path: str, language: str, version: str, modality: str, layout_model: str, cfg_name: str = "OCR"):
     url = "https://ilocr.iiit.ac.in/pageocr/api"
@@ -35,7 +48,8 @@ async def run_page_ocr(file_path: str, language: str, version: str, modality: st
                     pix = page.get_pixmap()
                     pix.save(image_path)
                     doc.close()
-                except Exception:
+                except Exception as e:
+                    logger.error(f"[{cfg_name}] Failed to extract image from PDF {file_path}: {e}")
                     pass
             
             upload_path = image_path
@@ -54,39 +68,155 @@ async def run_page_ocr(file_path: str, language: str, version: str, modality: st
                     "binarize": "false"
                 }
                 
-                print(f"[{cfg_name}] Sending OCR request for {filename}...")
+                logger.info(f"[{cfg_name}] Calling OCR API for {filename} (Lang: {language}, Modality: {modality})")
                 start_time = time.time()
-                response = await client.post(url, data=data, files=files, timeout=60.0)
-                duration = time.time() - start_time
-                print(f"[{cfg_name}] Request completed in {duration:.2f}s with status {response.status_code}")
-                
-                if response.status_code == 200:
-                    resp_json = response.json()
+                try:
+                    response = await client.post(url, data=data, files=files, timeout=60.0)
+                    duration = time.time() - start_time
+                    logger.info(f"[{cfg_name}] Request completed in {duration:.2f}s with status {response.status_code}")
                     
-                    import re
-                    text = resp_json.get("text", "")
-                    
-                    # The API often returns one word per line (single newlines).
-                    # We replace single newlines with spaces to form paragraphs,
-                    # but preserve multiple newlines if they exist.
-                    formatted_text = re.sub(r'(?<!\n)\n(?!\n)', ' ', text)
-                    
-                    if formatted_text.strip():
-                        return formatted_text, resp_json
-                    return text, resp_json
-                else:
-                    return f"API Error HTTP {response.status_code}: {response.text}", None
+                    if response.status_code == 200:
+                        resp_json = response.json()
+                        
+                        import re
+                        text = resp_json.get("text", "")
+                        
+                        # The API often returns one word per line (single newlines).
+                        # We replace single newlines with spaces to form paragraphs,
+                        # but preserve multiple newlines if they exist.
+                        formatted_text = re.sub(r'(?<!\n)\n(?!\n)', ' ', text)
+                        
+                        if formatted_text.strip():
+                            return formatted_text, resp_json
+                        return text, resp_json
+                    else:
+                        logger.error(f"[{cfg_name}] HTTP {response.status_code} Error: {response.text}")
+                        return f"API Error HTTP {response.status_code}: {response.text}", None
+                except httpx.TimeoutException as e:
+                    duration = time.time() - start_time
+                    logger.error(f"[{cfg_name}] Timeout occurred after {duration:.2f}s: {e}")
+                    return f"OCR API Timeout Error: {str(e)}", None
+                except httpx.RequestError as e:
+                    logger.error(f"[{cfg_name}] Connection refused / Request Error: {e}")
+                    return f"OCR API Connection Error: {str(e)}", None
     except Exception as e:
-        print(f"[{cfg_name}] Page OCR API failed: {repr(e)}")
+        logger.error(f"[{cfg_name}] Page OCR API failed unexpectedly: {repr(e)}")
         err_msg = str(e) if str(e) else repr(e)
         return f"Failed to connect to Page_OCR API. Error: {err_msg}", None
 
+async def run_ocr_pipeline(document_id: int, language: str, modality: str, configs: list):
+    """Background task to run OCR, write to DB, and emit SSE events."""
+    db = SessionLocal()
+    try:
+        doc = db.query(models.Document).filter(models.Document.id == document_id).first()
+        if not doc:
+            return
+            
+        doc.status = "PROCESSING"
+        db.commit()
 
-@router.post("/process", response_model=List[schemas.OCRResultResponse])
-async def process_document(document_id: int, language: str = "english", modality: str = "printed", db: Session = Depends(get_db)):
+        async def run_with_semaphore(cfg):
+            async with OCR_API_SEMAPHORE:
+                extracted_text, raw_json = await run_page_ocr(doc.file_path, language.lower(), cfg["version"], modality.lower(), cfg["layout"], cfg["name"])
+                
+                # Save immediately
+                ocr_res = models.OCRResult(
+                    document_id=doc.id,
+                    model_name=f"{cfg['name']} ({cfg['version']})",
+                    extracted_text=extracted_text,
+                    error_count=0,
+                    raw_json=raw_json
+                )
+                db.add(ocr_res)
+                db.commit()
+                db.refresh(ocr_res)
+                
+                # Emit SSE event
+                # We need to construct a dict matching schemas.OCRResultResponse
+                res_dict = {
+                    "id": ocr_res.id,
+                    "document_id": ocr_res.document_id,
+                    "model_name": ocr_res.model_name,
+                    "extracted_text": ocr_res.extracted_text,
+                    "corrected_text": ocr_res.corrected_text,
+                    "error_count": ocr_res.error_count,
+                    "raw_json": ocr_res.raw_json
+                }
+                asyncio.create_task(stream_manager.broadcast(document_id, "MODEL_COMPLETED", res_dict))
+                return ocr_res
+
+        logger.info(f"[TIMING] Starting parallel OCR models for document_id={document_id}...")
+        ocr_start = time.time()
+        tasks = [run_with_semaphore(cfg) for cfg in configs]
+        ocr_results = await asyncio.gather(*tasks)
+        logger.info(f"[TIMING] Parallel OCR completed for document_id={document_id} in {time.time() - ocr_start:.4f}s")
+
+        # --- Run Fusion Algorithm ---
+        successful_results = [r for r in ocr_results if r.raw_json is not None]
+        
+        if successful_results:
+            fusion_start = time.time()
+            try:
+                final_text, confidence, reconstructed_json = fusion_service.run_fusion(successful_results)
+                
+                fusion_record = models.FusionResult(
+                    document_id=doc.id,
+                    fused_text=final_text,
+                    confidence_score=float(confidence),
+                    model_count=len(successful_results)
+                )
+                db.add(fusion_record)
+                
+                fused_ocr_res = models.OCRResult(
+                    document_id=doc.id,
+                    model_name=f"⭐ Fused Result (Recommended) | Confidence: {int(confidence)}%",
+                    extracted_text=final_text,
+                    error_count=0,
+                    raw_json=reconstructed_json
+                )
+                db.add(fused_ocr_res)
+                db.commit()
+                db.refresh(fused_ocr_res)
+                logger.info(f"[TIMING] Fusion completed and saved in {time.time() - fusion_start:.4f}s")
+                
+                # Emit SSE event for fusion
+                res_dict = {
+                    "id": fused_ocr_res.id,
+                    "document_id": fused_ocr_res.document_id,
+                    "model_name": fused_ocr_res.model_name,
+                    "extracted_text": fused_ocr_res.extracted_text,
+                    "corrected_text": fused_ocr_res.corrected_text,
+                    "error_count": fused_ocr_res.error_count,
+                    "raw_json": fused_ocr_res.raw_json
+                }
+                asyncio.create_task(stream_manager.broadcast(document_id, "FUSION_COMPLETED", res_dict))
+                
+            except Exception as e:
+                import traceback
+                print(f"Fusion failed: {e}")
+                traceback.print_exc()
+
+        doc.status = "COMPLETED"
+        db.commit()
+        
+        # Emit page complete event
+        asyncio.create_task(stream_manager.broadcast(document_id, "PAGE_COMPLETED", {"document_id": document_id}))
+
+    except Exception as e:
+        logger.error(f"Pipeline error for document_id={document_id}: {e}")
+        doc = db.query(models.Document).filter(models.Document.id == document_id).first()
+        if doc:
+            doc.status = "FAILED"
+            db.commit()
+    finally:
+        db.close()
+
+@router.post("/process")
+async def process_document(document_id: int, background_tasks: BackgroundTasks, language: str = "english", modality: str = "printed", db: Session = Depends(get_db)):
     doc = db.query(models.Document).filter(models.Document.id == document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
 
     # Define modality configurations
     configs = []
@@ -111,70 +241,16 @@ async def process_document(document_id: int, language: str = "english", modality
     else:
         raise HTTPException(status_code=400, detail="Invalid modality provided")
 
-    # Run OCR models sequentially to reduce API overload
-    results = []
-    for cfg in configs:
-        res = await run_page_ocr(doc.file_path, language.lower(), cfg["version"], modality.lower(), cfg["layout"], cfg["name"])
-        results.append(res)
-
-    ocr_results = []
-    for idx, cfg in enumerate(configs):
-        extracted_text, raw_json = results[idx]
+    # If already processing or completed, just return status
+    if doc.status in ["PROCESSING", "COMPLETED"]:
+        return {"status": doc.status, "document_id": document_id}
         
-        # Create OCRResult record
-        # model_name now stores both the Configuration name and the specific version for easy UI tracking
-        ocr_res = models.OCRResult(
-            document_id=doc.id,
-            model_name=f"{cfg['name']} ({cfg['version']})",
-            extracted_text=extracted_text,
-            error_count=0,
-            raw_json=raw_json
-        )
-        db.add(ocr_res)
-        ocr_results.append(ocr_res)
-
+    doc.status = "PENDING"
     db.commit()
 
-    # --- Run Fusion Algorithm ---
-    # Only fuse successful models
-    successful_results = [r for r in ocr_results if r.raw_json is not None]
+    background_tasks.add_task(run_ocr_pipeline, document_id, language, modality, configs)
     
-    if successful_results:
-        try:
-            final_text, confidence, reconstructed_json = fusion_service.run_fusion(successful_results)
-            
-            # Save to fusion_results table
-            fusion_record = models.FusionResult(
-                document_id=doc.id,
-                fused_text=final_text,
-                confidence_score=float(confidence),
-                model_count=len(successful_results)
-            )
-            db.add(fusion_record)
-            
-            # Save as an OCRResult for seamless UI integration
-            fused_ocr_res = models.OCRResult(
-                document_id=doc.id,
-                model_name=f"⭐ Fused Result (Recommended) | Confidence: {int(confidence)}%",
-                extracted_text=final_text,
-                error_count=0,
-                raw_json=reconstructed_json
-            )
-            db.add(fused_ocr_res)
-            db.commit()
-            db.refresh(fused_ocr_res)
-            
-            # Insert Fused Result at the beginning of the list
-            ocr_results.insert(0, fused_ocr_res)
-        except Exception as e:
-            import traceback
-            print(f"Fusion failed: {e}")
-            traceback.print_exc()
-
-    for res in ocr_results:
-        db.refresh(res)
-
-    return ocr_results
+    return {"status": "processing", "document_id": document_id}
 
 @router.post("/save", response_model=schemas.AnnotationResponse)
 def save_annotation(ocr_result_id: int, annotation: schemas.AnnotationCreate, db: Session = Depends(get_db)):

@@ -8,11 +8,20 @@ from sqlalchemy.orm import Session # type: ignore
 from typing import List
 import re
 import urllib.parse
+import time
+import logging
 
 from database import get_db # type: ignore
 import models, schemas # type: ignore
 
 router = APIRouter()
+
+logger = logging.getLogger("upload_service")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    ch = logging.StreamHandler()
+    ch.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(ch)
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -39,9 +48,11 @@ def save_single_file(file_path: str, content: bytes, db: Session, file_hash: str
 
 @router.post("/upload", response_model=schemas.BatchUploadResponse)
 async def upload_document(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    upload_start = time.time()
     # Read ALL bytes up front so we can hash and also save without re-reading
     content = await file.read()
     file_hash = hash_bytes(content)
+    logger.info(f"[TIMING] File {file.filename} read and hashed in {time.time() - upload_start:.4f}s")
 
     filename = file.filename or ""
     ext = os.path.splitext(filename)[1].lower()
@@ -99,10 +110,12 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
         with open(pdf_path, "wb") as f:
             f.write(content)
 
+        pdf_start = time.time()
         import fitz  # PyMuPDF
         try:
             doc = fitz.open(pdf_path)
             total_pages = len(doc)
+            logger.info(f"[TIMING] PDF opened, pages={total_pages} in {time.time() - pdf_start:.4f}s")
         except Exception as e:
             raise HTTPException(
                 status_code=400,
@@ -120,6 +133,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
         file_paths: List[str] = []
         filenames: List[str] = []
 
+        page_extract_start = time.time()
         for page_num in range(total_pages):
             try:
                 page = doc.load_page(page_num)
@@ -168,8 +182,10 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
             file_paths.append(f"http://127.0.0.1:8000/uploads/{safe_rel_path}")
             filenames.append(f"{filename} (Page {page_num + 1})")
 
+        logger.info(f"[TIMING] All {total_pages} PDF pages extracted to images in {time.time() - page_extract_start:.4f}s")
         doc.close()
 
+        logger.info(f"[TIMING] Total PDF /upload process took {time.time() - upload_start:.4f}s")
         return schemas.BatchUploadResponse(
             document_ids=document_ids,
             file_paths=file_paths,
@@ -260,6 +276,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
                 detail="ZIP file contains no supported image files (.jpg, .jpeg, .png).",
             )
 
+        logger.info(f"[TIMING] Total ZIP /upload process took {time.time() - upload_start:.4f}s")
         return schemas.BatchUploadResponse(
             document_ids=document_ids,
             file_paths=file_paths,
