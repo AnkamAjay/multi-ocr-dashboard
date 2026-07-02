@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+venv/
+backend/venv/
+.venv/
+
+# Uploaded documents and extracted files
+backend/uploads/
+
+# Local SQLite database
+backend/ocr_database.db
+
+# Node modules
+frontend/node_modules/
+
+# Environment files
+.env
+.env.local
+
+# Operating system files
+.DS_Store
+Thumbs.db

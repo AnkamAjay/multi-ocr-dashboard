@@ -214,7 +214,7 @@ const HelpPanel: React.FC<HelpPanelProps> = ({ isOpen, onClose }) => {
               </div>
               <div>
                 <p className="text-sm font-bold text-gray-800">Where can I see my statistics?</p>
-                <p className="text-sm text-gray-600 mt-0.5">Click the "My Statistics" button in the top navigation bar.</p>
+                <p className="text-sm text-gray-600 mt-0.5">Click the &quot;My Statistics&quot; button in the top navigation bar.</p>
               </div>
             </div>
           </section>
@@ -226,7 +226,7 @@ const HelpPanel: React.FC<HelpPanelProps> = ({ isOpen, onClose }) => {
             onClick={onClose}
             className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow transition-colors"
           >
-            Got it, let's start!
+            Got it, let&apos;s start!
           </button>
         </div>
       </div>

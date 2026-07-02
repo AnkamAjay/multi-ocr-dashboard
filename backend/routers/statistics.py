@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from typing import List
-from datetime import datetime
+from datetime import datetime, timezone
 
 import models, schemas
 from database import get_db
@@ -94,13 +94,22 @@ def update_statistics(stats_request: schemas.StatisticsUpdateRequest, db: Sessio
         
     # 3. Add Annotation Logs
     for log in stats_request.logs:
+        if log.timestamp:
+            ts = log.timestamp
+            ts = ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts.astimezone(timezone.utc)
+        else:
+            ts = datetime.now(timezone.utc)
+
         db_log = models.AnnotationLog(
             document_id=doc_id,
             user_id=user_id,
             action_type=log.action_type,
             previous_value=log.previous_value,
             updated_value=log.updated_value,
-            timestamp=log.timestamp or datetime.utcnow()
+            text_content=log.text_content,
+            page_number=log.page_number,
+            filename=log.filename,
+            timestamp=ts.replace(tzinfo=None)
         )
         db.add(db_log)
         

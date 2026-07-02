@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   uploadDocument,
   processDocument,
@@ -9,7 +9,8 @@ import {
   saveBboxCorrections,
   getResults,
   saveStatistics,
-  AnnotationLogCreate
+  AnnotationLogCreate,
+  getBaseUrl
 } from "../services/api";
 import Link from "next/link";
 import { useAuth } from "../context/AuthContext";
@@ -17,6 +18,7 @@ import BboxCanvas, { BBox, BBoxStatus } from "../components/BboxCanvas";
 import BboxToolbar from "../components/BboxToolbar";
 import CompareModal from "../components/CompareModal";
 import HelpPanel from "../components/HelpPanel";
+import InteractiveTextViewer from "../components/InteractiveTextViewer";
 import { ReactTransliterate } from "react-transliterate";
 import "react-transliterate/dist/index.css";
 
@@ -41,7 +43,8 @@ export default function Home() {
   const [batchProgress, setBatchProgress] = useState<{ done: number, total: number } | null>(null);
 
   const activeDocId = batchDocIds[activeDocIndex] ?? null;
-  const previewUrl = batchFilePaths[activeDocIndex] ? `${batchFilePaths[activeDocIndex]}?v=${activeDocId}` : null;
+  const baseUrl = getBaseUrl();
+  const previewUrl = batchFilePaths[activeDocIndex] ? `${baseUrl}${batchFilePaths[activeDocIndex]}?v=${activeDocId}` : null;
 
   const [loading, setLoading] = useState(false);
   const [batchResults, setBatchResults] = useState<Record<number, any[]>>({});
@@ -67,6 +70,10 @@ export default function Home() {
   // ── Statistics Tracking State ──
   const [initialBboxList, setInitialBboxList] = useState<BBox[]>([]);
   const [editStartTime, setEditStartTime] = useState<number | null>(null);
+
+  // Helper: format bbox coords as a compact string
+  const fmtCoords = (b: BBox) =>
+    `x:${Math.round(b.x)}, y:${Math.round(b.y)}, w:${Math.round(b.w)}, h:${Math.round(b.h)}`;
 
   const handleZoomIn = () => setZoomLevel((prev) => Math.min(prev + 0.25, 5));
   const handleZoomOut = () => setZoomLevel((prev) => Math.max(prev - 0.25, 0.25));
@@ -203,7 +210,7 @@ export default function Home() {
                 setCachedCorrectionsForDoc(cachedCorrectedJson);
                 setBboxList(cachedCorrectedJson);
                 setInitialBboxList(cachedCorrectedJson);
-                setEditedText(cachedCorrectedJson.map((b: BBox) => b.text).join('\n'));
+                setEditedText((cachedCorrectedJson as BBox[]).map((b: BBox) => b.text).join('\n'));
               } else if (resultsMap[currentDocId] && resultsMap[currentDocId].length > 0) {
                 // Determine best model for the current doc
                 const res = resultsMap[currentDocId];
@@ -296,6 +303,7 @@ export default function Home() {
     setEditingId(null);
     setPrimaryResultId(null);
     setBboxList([]);
+    setInitialBboxList([]);
 
     if (docId && (!batchResults[docId] || batchResults[docId].length === 0)) {
       try {
@@ -462,9 +470,10 @@ export default function Home() {
   const handleDeleteBbox = () => {
     if (selectedBboxIds.length === 0) return;
     const newList = bboxList.map(b =>
-      selectedBboxIds.includes(b.id) ? { ...b, status: "deleted" as BBoxStatus } : b
+      selectedBboxIds.includes(b.id) ? { ...b, status: "deleted" as BBoxStatus, lastModified: Date.now() } : b
     );
-    updateBboxList(newList);
+    pushHistory(bboxList);
+    setBboxList(newList);
     setSelectedBboxIds([]);
     setMiniEditorText("");
   };
@@ -512,7 +521,8 @@ export default function Home() {
       id: `merged-${Date.now()}`,
       x, y, w: xMax - x, h: yMax - y,
       text: mergedText,
-      status: 'new'
+      status: 'new',
+      lastModified: Date.now()
     };
 
     const newList = [
@@ -520,7 +530,8 @@ export default function Home() {
       mergedBbox
     ];
 
-    updateBboxList(newList);
+    pushHistory(bboxList);
+    setBboxList(newList);
     setSelectedBboxIds([mergedBbox.id]);
     setMiniEditorText(mergedBbox.text);
   };
@@ -534,11 +545,13 @@ export default function Home() {
     setMiniEditorText("");
   };
 
-  // Update mini editor when selection changes
+  // Update mini editor text when selection changes
   useEffect(() => {
     if (selectedBboxIds.length === 1) {
       const b = bboxList.find(x => x.id === selectedBboxIds[0]);
-      if (b) setMiniEditorText(b.text);
+      if (b && b.status !== 'deleted') {
+        setMiniEditorText(b.text);
+      }
     } else {
       setMiniEditorText("");
     }
@@ -548,7 +561,7 @@ export default function Home() {
     setMiniEditorText(val);
     if (selectedBboxIds.length === 1) {
       setBboxList(prev => prev.map(b =>
-        b.id === selectedBboxIds[0] ? { ...b, text: val, status: b.status === 'original' ? 'modified' : b.status } : b
+        b.id === selectedBboxIds[0] ? { ...b, text: val, status: b.status === 'original' ? 'modified' : b.status, lastModified: Date.now() } : b
       ));
     }
   };
@@ -605,8 +618,6 @@ export default function Home() {
       let bbox_deleted = 0;
       let bbox_edited = 0;
       let text_edited = 0;
-      const logs: AnnotationLogCreate[] = [];
-      const nowStr = new Date().toISOString();
 
       const finalMap = new Map<string, BBox>();
       bboxList.forEach(b => finalMap.set(b.id, b));
@@ -616,12 +627,6 @@ export default function Home() {
         const finalBox = finalMap.get(initBox.id);
         if (!finalBox || finalBox.status === 'deleted') {
           bbox_deleted += 1;
-          logs.push({
-            action_type: "Delete Bounding Box",
-            previous_value: `x:${Math.round(initBox.x)}, y:${Math.round(initBox.y)}, w:${Math.round(initBox.w)}, h:${Math.round(initBox.h)}`,
-            updated_value: "Deleted",
-            timestamp: nowStr
-          });
         } else {
           // Check position edit
           const isPosChanged = Math.abs(initBox.x - finalBox.x) > 2 ||
@@ -630,22 +635,10 @@ export default function Home() {
             Math.abs(initBox.h - finalBox.h) > 2;
           if (isPosChanged) {
             bbox_edited += 1;
-            logs.push({
-              action_type: "Edit Bounding Box",
-              previous_value: `x:${Math.round(initBox.x)}, y:${Math.round(initBox.y)}, w:${Math.round(initBox.w)}, h:${Math.round(initBox.h)}`,
-              updated_value: `x:${Math.round(finalBox.x)}, y:${Math.round(finalBox.y)}, w:${Math.round(finalBox.w)}, h:${Math.round(finalBox.h)}`,
-              timestamp: nowStr
-            });
           }
           // Check text edit
           if (initBox.text !== finalBox.text) {
             text_edited += 1;
-            logs.push({
-              action_type: "Edit Text",
-              previous_value: initBox.text || "[Empty]",
-              updated_value: finalBox.text || "[Empty]",
-              timestamp: nowStr
-            });
           }
         }
       });
@@ -657,11 +650,71 @@ export default function Home() {
       bboxList.forEach(finalBox => {
         if (finalBox.status !== 'deleted' && !initialMapCheck.has(finalBox.id)) {
           bbox_created += 1;
-          logs.push({
-            action_type: "Create Bounding Box",
+        }
+      });
+
+      const currentFilename = isBatch && batchFilenames.length > activeDocIndex ? batchFilenames[activeDocIndex] : (file?.name || "Unknown");
+
+      // ── State-based Audit Log Generation ──
+      // Compare initialBboxList (snapshot at start) vs current bboxList (final state)
+      // to generate ONE clean log entry per bbox: Create, Edit, or Delete.
+      const auditLogs: AnnotationLogCreate[] = [];
+      const initialMap = new Map<string, BBox>();
+      initialBboxList.forEach(b => initialMap.set(b.id, b));
+
+      // Check for deletions and edits (bboxes that existed in initial state)
+      initialBboxList.forEach(initBox => {
+        const finalBox = finalMap.get(initBox.id);
+        if (!finalBox || finalBox.status === 'deleted') {
+          // DELETED – log previous text + coords; updated = "Deleted"
+          auditLogs.push({
+            action_type: "Delete",
+            previous_value: fmtCoords(initBox),
+            updated_value: "Deleted",
+            text_content: initBox.text || "[Empty]",
+            page_number: activeDocIndex + 1,
+            filename: currentFilename,
+            timestamp: new Date(finalBox?.lastModified || Date.now()).toISOString()
+          });
+        } else {
+          // Check what changed
+          const posChanged = Math.abs(initBox.x - finalBox.x) > 1 ||
+            Math.abs(initBox.y - finalBox.y) > 1 ||
+            Math.abs(initBox.w - finalBox.w) > 1 ||
+            Math.abs(initBox.h - finalBox.h) > 1;
+          const textChanged = initBox.text !== finalBox.text;
+
+          if (posChanged || textChanged) {
+            // EDITED – ONE entry covering coords + text in prev and updated
+            auditLogs.push({
+              action_type: "Edit",
+              previous_value: fmtCoords(initBox),
+              updated_value: fmtCoords(finalBox),
+              // Encode both old and new text as JSON so the display can render them
+              text_content: JSON.stringify({
+                old_text: initBox.text || "[Empty]",
+                new_text: finalBox.text || "[Empty]"
+              }),
+              page_number: activeDocIndex + 1,
+              filename: currentFilename,
+              timestamp: new Date(finalBox.lastModified || Date.now()).toISOString()
+            });
+          }
+        }
+      });
+
+      // Check for newly created bboxes (not present in initial state)
+      bboxList.forEach(finalBox => {
+        if (finalBox.status !== 'deleted' && !initialMap.has(finalBox.id)) {
+          // CREATED – previous = "None"; updated = final coords + final text
+          auditLogs.push({
+            action_type: "Create",
             previous_value: "None",
-            updated_value: `x:${Math.round(finalBox.x)}, y:${Math.round(finalBox.y)}, w:${Math.round(finalBox.w)}, h:${Math.round(finalBox.h)}`,
-            timestamp: nowStr
+            updated_value: fmtCoords(finalBox),
+            text_content: finalBox.text || "[Empty]",
+            page_number: activeDocIndex + 1,
+            filename: currentFilename,
+            timestamp: new Date(finalBox.lastModified || Date.now()).toISOString()
           });
         }
       });
@@ -671,12 +724,13 @@ export default function Home() {
       const statsPayload = {
         document_id: batchDocIds[0] || activeDocId || 1,
         page_number: activeDocIndex + 1,
+        filename: currentFilename,
         bbox_deleted,
         bbox_created,
         bbox_edited,
         text_edited,
         time_spent: timeSpent,
-        logs,
+        logs: auditLogs,
         source_file_type: sourceFileType,
         total_pages: totalPages || batchDocIds.length || 1
       };
@@ -752,7 +806,7 @@ export default function Home() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  });
+  }, [editingId, handleSaveCorrections, handleUndo, handleDeleteBbox, handleMergeBbox, handleZoomIn, handleZoomOut, handleZoomReset]);
 
   const primaryResult = ocrResults.find(r => r.id === primaryResultId) || ocrResults[0];
 
@@ -1001,13 +1055,12 @@ export default function Home() {
                 )}
 
                 {/* Full Text Viewer */}
-                <div className="flex flex-col flex-1 shrink-0">
+                <div className="flex flex-col flex-1 shrink-0 min-h-[250px]">
                   <label className="text-xs font-bold text-gray-500 mb-1 block uppercase tracking-wider">Full Page Text (Preview)</label>
-                  <textarea
-                    className="w-full flex-1 bg-gray-50 text-gray-700 border border-gray-200 p-4 rounded-lg focus:outline-none resize-none min-h-[250px] text-base leading-relaxed"
-                    value={editedText}
-                    readOnly
-                    placeholder="Full text will appear here as you edit regions..."
+                  <InteractiveTextViewer
+                    bboxList={bboxList}
+                    selectedIds={selectedBboxIds}
+                    onSelectChange={setSelectedBboxIds}
                   />
                 </div>
 
@@ -1076,11 +1129,36 @@ export default function Home() {
 
                   </div>
 
-                  <div className="text-gray-700 flex-1 flex flex-col gap-2 overflow-auto bg-gray-50 p-5 rounded-lg border border-gray-100">
-                    <p className="whitespace-pre-wrap flex-1 text-base leading-relaxed">
-                      {primaryResult.corrected_text || primaryResult.extracted_text}
-                    </p>
-                  </div>
+                  {(() => {
+                    const source = primaryResult.raw_json?.regions ?? [];
+                    if (source.length === 0) {
+                      return (
+                        <div className="text-gray-700 flex-1 flex flex-col gap-2 overflow-auto bg-gray-50 p-5 rounded-lg border border-gray-100">
+                          <p className="whitespace-pre-wrap flex-1 text-base leading-relaxed">
+                            {primaryResult.corrected_text || primaryResult.extracted_text}
+                          </p>
+                        </div>
+                      );
+                    }
+                    const previewBboxes: BBox[] = source.map((region: any, i: number) => ({
+                      id: `preview-${primaryResult.id}-${i}`,
+                      x: region.bounding_box?.x ?? region.bbox?.left ?? region.bbox?.x ?? 0,
+                      y: region.bounding_box?.y ?? region.bbox?.top ?? region.bbox?.y ?? 0,
+                      w: region.bounding_box?.w ?? region.bbox?.width ?? region.bbox?.w ?? 50,
+                      h: region.bounding_box?.h ?? region.bbox?.height ?? region.bbox?.h ?? 20,
+                      text: region.words?.map((w: any) => w.text).join(' ') || region.text || region.label || '',
+                      status: 'original' as BBoxStatus,
+                    }));
+                    return (
+                      <div className="flex-1 flex flex-col min-h-[250px]">
+                        <InteractiveTextViewer
+                          bboxList={previewBboxes}
+                          selectedIds={[]}
+                          onSelectChange={() => {}}
+                        />
+                      </div>
+                    );
+                  })()}
 
                   <div className="mt-6 flex justify-end">
                     <button onClick={() => handleStartEditing(primaryResult.id)} className="flex items-center gap-2 px-6 py-3 text-base font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition-all active:scale-95">

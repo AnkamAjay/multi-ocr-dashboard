@@ -12,6 +12,7 @@ from database import get_db, SessionLocal # type: ignore
 from services import fusion_service
 from services.stream_manager import stream_manager
 from fastapi import BackgroundTasks
+from auth_utils import get_current_user
 
 router = APIRouter()
 
@@ -212,10 +213,13 @@ async def run_ocr_pipeline(document_id: int, language: str, modality: str, confi
         db.close()
 
 @router.post("/process")
-async def process_document(document_id: int, background_tasks: BackgroundTasks, language: str = "english", modality: str = "printed", db: Session = Depends(get_db)):
-    doc = db.query(models.Document).filter(models.Document.id == document_id).first()
+async def process_document(document_id: int, background_tasks: BackgroundTasks, language: str = "english", modality: str = "printed", db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    doc = db.query(models.Document).filter(
+        models.Document.id == document_id,
+        models.Document.user_id == current_user.id
+    ).first()
     if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=404, detail="Document not found or unauthorized")
 
 
     # Define modality configurations
@@ -278,16 +282,20 @@ def save_annotation(ocr_result_id: int, annotation: schemas.AnnotationCreate, db
 def save_bbox_corrections(
     document_id: int,
     corrections: schemas.SaveCorrectionsRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
     """
     Save the Gold Standard bbox+text corrections for a document.
     This is the document-level truth — not tied to any specific OCR model.
     Called when the user clicks 'Save Corrections' after bbox CRUD editing.
     """
-    doc = db.query(models.Document).filter(models.Document.id == document_id).first()
+    doc = db.query(models.Document).filter(
+        models.Document.id == document_id,
+        models.Document.user_id == current_user.id
+    ).first()
     if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=404, detail="Document not found or unauthorized")
 
     doc.corrected_json = corrections.corrected_json
     doc.is_corrected = True
@@ -302,7 +310,14 @@ def save_bbox_corrections(
 
 
 @router.get("/best-model/{document_id}")
-def get_best_model(document_id: int, db: Session = Depends(get_db)):
+def get_best_model(document_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    doc = db.query(models.Document).filter(
+        models.Document.id == document_id,
+        models.Document.user_id == current_user.id
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found or unauthorized")
+        
     results = db.query(models.OCRResult).filter(models.OCRResult.document_id == document_id).all()
     if not results:
         raise HTTPException(status_code=404, detail="No OCR results found for this document")
@@ -312,7 +327,14 @@ def get_best_model(document_id: int, db: Session = Depends(get_db)):
     return {"best_model": best_model.model_name, "error_count": best_model.error_count}
 
 @router.post("/fusion/generate", response_model=schemas.FusionGenerateResponse)
-def generate_fusion(document_id: int, db: Session = Depends(get_db)):
+def generate_fusion(document_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    doc = db.query(models.Document).filter(
+        models.Document.id == document_id,
+        models.Document.user_id == current_user.id
+    ).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found or unauthorized")
+        
     results = db.query(models.OCRResult).filter(
         models.OCRResult.document_id == document_id,
         ~models.OCRResult.model_name.contains("Fused Result")

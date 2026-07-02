@@ -68,12 +68,18 @@ class AnnotationLogBase(BaseModel):
     action_type: str
     previous_value: Optional[str] = None
     updated_value: Optional[str] = None
+    text_content: Optional[str] = None
+    page_number: Optional[int] = 1
+    filename: Optional[str] = ""
     timestamp: datetime
 
 class AnnotationLogCreate(BaseModel):
     action_type: str
     previous_value: Optional[str] = None
     updated_value: Optional[str] = None
+    text_content: Optional[str] = None
+    page_number: Optional[int] = 1
+    filename: Optional[str] = ""
     timestamp: Optional[datetime] = None
 
 class AnnotationLogResponse(AnnotationLogBase):
@@ -125,6 +131,7 @@ class AnnotationSummaryResponse(AnnotationSummaryBase):
 class StatisticsUpdateRequest(BaseModel):
     document_id: int
     page_number: int
+    filename: Optional[str] = ""
     bbox_deleted: int
     bbox_created: int
     bbox_edited: int

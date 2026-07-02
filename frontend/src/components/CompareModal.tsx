@@ -5,7 +5,7 @@ interface ModelResult {
   model_name: string;
   extracted_text: string;
   corrected_text?: string;
-  raw_json?: any;
+  raw_json?: unknown;
 }
 
 interface CompareModalProps {
@@ -132,7 +132,7 @@ export default function CompareModal({
 
         {/* Footer */}
         <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-500 shrink-0">
-          Tip: Fused Result is auto-selected based on majority voting. Click "Use This Model" to switch and reload the bounding boxes.
+          Tip: Fused Result is auto-selected based on majority voting. Click &quot;Use This Model&quot; to switch and reload the bounding boxes.
         </div>
       </div>
     </div>

@@ -1,6 +1,5 @@
 "use client";
 
-import { BBox } from "./BboxCanvas";
 
 interface BboxToolbarProps {
   toolMode: "select" | "draw";

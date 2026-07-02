@@ -14,6 +14,7 @@ export interface BBox {
   h: number;
   text: string;
   status: BBoxStatus;
+  lastModified?: number;
 }
 
 interface BboxCanvasProps {
@@ -151,6 +152,7 @@ export default function BboxCanvas({
       h: toOriginal(draftRect.h),
       text: "",
       status: "new",
+      lastModified: Date.now(),
     };
     onBboxChange([...bboxList, newBbox]);
     onSelectChange([newBbox.id]);
@@ -158,10 +160,14 @@ export default function BboxCanvas({
   }, [toolMode, draftRect, bboxList, onBboxChange, onSelectChange, scale]);
 
   // ── Handle bbox rect click (select / multi-select) ───────────────────────
+  const lastClickedRectId = useRef<string | null>(null);
+
   const handleRectClick = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>, bboxId: string) => {
       e.cancelBubble = true;
       if (toolMode !== "select") return;
+      lastClickedRectId.current = bboxId;
+      
       if (e.evt.shiftKey) {
         // Multi-select
         if (selectedIds.includes(bboxId)) {
@@ -176,6 +182,8 @@ export default function BboxCanvas({
     [toolMode, selectedIds, onSelectChange]
   );
 
+
+
   // ── Handle drag end (move) ────────────────────────────────────────────────
   const handleDragEnd = useCallback(
     (e: Konva.KonvaEventObject<DragEvent>, bboxId: string) => {
@@ -188,6 +196,7 @@ export default function BboxCanvas({
                 x: toOriginal(node.x()),
                 y: toOriginal(node.y()),
                 status: "modified",
+                lastModified: Date.now(),
               }
             : b
         )
@@ -214,6 +223,7 @@ export default function BboxCanvas({
                 w: toOriginal(node.width() * scaleX),
                 h: toOriginal(node.height() * scaleY),
                 status: "modified",
+                lastModified: Date.now(),
               }
             : b
         )
@@ -259,9 +269,9 @@ export default function BboxCanvas({
                 y={b.y * scale}
                 width={b.w * scale}
                 height={b.h * scale}
-                stroke={isSelected ? "#4F46E5" : color}
+                stroke={isSelected ? "#EAB308" : color}
                 strokeWidth={isSelected ? 2.5 : 1.5}
-                fill={isSelected ? "rgba(79,70,229,0.12)" : "rgba(0,0,0,0)"}
+                fill={isSelected ? "rgba(234, 179, 8, 0.2)" : "rgba(0,0,0,0)"}
                 draggable={toolMode === "select"}
                 onClick={(e) => handleRectClick(e, b.id)}
                 onDragEnd={(e) => handleDragEnd(e, b.id)}

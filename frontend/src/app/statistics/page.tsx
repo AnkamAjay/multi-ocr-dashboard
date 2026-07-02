@@ -90,10 +90,13 @@ export default function StatisticsPage() {
 
     // Search by content
     if (logSearch.trim() !== "") {
-      const lowerSearch = logSearch.toLowerCase();
+      const lowerSearch = logSearch.toLocaleLowerCase();
       result = result.filter(log => 
-        (log.previous_value && log.previous_value.toLowerCase().includes(lowerSearch)) ||
-        (log.updated_value && log.updated_value.toLowerCase().includes(lowerSearch))
+        (log.previous_value && log.previous_value.toLocaleLowerCase().includes(lowerSearch)) ||
+        (log.updated_value && log.updated_value.toLocaleLowerCase().includes(lowerSearch)) ||
+        (log.text_content && log.text_content.toLocaleLowerCase().includes(lowerSearch)) ||
+        (log.filename && log.filename.toLocaleLowerCase().includes(lowerSearch)) ||
+        (log.page_number && log.page_number.toString().includes(lowerSearch))
       );
     }
 
@@ -104,14 +107,13 @@ export default function StatisticsPage() {
   }, [logs, logFilter, logSearch]);
 
   const getActionBadge = (actionType: string) => {
-    if (actionType.includes("Delete")) {
+    const t = actionType.toLowerCase();
+    if (t.includes("delete")) {
       return <span className="bg-red-50 text-red-700 border border-red-200 px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap">Delete</span>;
-    } else if (actionType.includes("Create")) {
+    } else if (t.includes("create")) {
       return <span className="bg-green-50 text-green-700 border border-green-200 px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap">Create</span>;
-    } else if (actionType.includes("Edit Bounding Box")) {
-      return <span className="bg-yellow-50 text-yellow-700 border border-yellow-200 px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap">Edit Box</span>;
-    } else if (actionType.includes("Edit Text")) {
-      return <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap">Edit Text</span>;
+    } else if (t === "edit" || t.includes("edit bbox") || t.includes("edit bounding") || t.includes("edit text")) {
+      return <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap">Edit</span>;
     }
     return <span className="bg-gray-50 text-gray-700 border border-gray-200 px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap">{actionType}</span>;
   };
@@ -123,30 +125,72 @@ export default function StatisticsPage() {
     return <span className="bg-red-100 text-red-700 font-bold px-3 py-1 rounded-full text-sm">{total}</span>;
   };
 
-  const renderLogValue = (val: string, type: 'prev' | 'next') => {
-    if (!val || val === "None" || val === "Deleted") {
-      return <span className="text-gray-400 italic">{val === "Deleted" ? "Deleted" : "None"}</span>;
+  // Render a log cell showing text label + coordinate chips together
+  const renderLogCell = (log: any, side: 'prev' | 'next') => {
+    const coords = side === 'prev' ? log.previous_value : log.updated_value;
+    const actionType = (log.action_type || '').toLowerCase();
+
+    // Handle "Deleted" sentinel
+    if (coords === 'Deleted' || coords === 'deleted') {
+      return <span className="text-red-500 italic font-semibold">Deleted</span>;
     }
-    
-    // Check if it's a coordinate string e.g. "x:1849, y:876, w:197, h:78"
-    if (val.toLowerCase().startsWith("x:")) {
-      const parts = val.split(',').map(s => s.trim());
-      return (
-        <div className="flex gap-1.5 flex-wrap">
-          {parts.map((p, i) => (
-            <span key={i} className="bg-gray-100 border border-gray-200 text-gray-600 px-1.5 py-0.5 rounded font-mono text-[10px] uppercase tracking-wider">
-              {p}
-            </span>
-          ))}
-        </div>
-      );
+
+    // Handle "None" sentinel (Create's previous)
+    if (!coords || coords === 'None' || coords === 'none') {
+      return <span className="text-gray-400 italic">None</span>;
     }
-    
-    // Standard text fallback
-    const textColor = type === 'prev' ? "text-red-600 line-through" : "text-emerald-600 font-semibold";
+
+    // Determine the text value for this side
+    let textValue: string | null = null;
+    const rawText = log.text_content || '';
+
+    // Try to parse text_content as JSON (Edit logs encode {old_text, new_text})
+    try {
+      const parsed = JSON.parse(rawText);
+      if (parsed && typeof parsed === 'object') {
+        textValue = side === 'prev'
+          ? (parsed.old_text ?? null)
+          : (parsed.new_text ?? null);
+      }
+    } catch {
+      // Plain text — use for the 'next' side (Create/Delete store final/prev text directly)
+      if (side === 'next' && (actionType === 'create' || actionType.includes('create'))) {
+        textValue = rawText || null;
+      } else if (side === 'prev' && (actionType === 'delete' || actionType.includes('delete'))) {
+        textValue = rawText || null;
+      } else if (side === 'next') {
+        textValue = rawText || null;
+      }
+    }
+
+    // Render coord chips
+    const coordChips = coords.toLowerCase().startsWith('x:')
+      ? coords.split(',').map((s: string) => s.trim()).filter(Boolean)
+      : null;
+
+    const textColorClass = side === 'prev' ? 'text-red-600' : 'text-emerald-700 font-semibold';
+
     return (
-      <div className={`max-w-[200px] truncate ${textColor}`} title={val}>
-        {val}
+      <div className="flex flex-col gap-1">
+        {textValue && textValue !== '[Empty]' && (
+          <div className={`text-[11px] ${textColorClass} max-w-[200px] truncate`} title={textValue}>
+            <span className="text-gray-400 font-normal">Text: </span>{textValue}
+          </div>
+        )}
+        {textValue === '[Empty]' && (
+          <div className="text-[11px] text-gray-400 italic">Text: [Empty]</div>
+        )}
+        {coordChips ? (
+          <div className="flex gap-1 flex-wrap">
+            {coordChips.map((p: string, i: number) => (
+              <span key={i} className="bg-gray-100 border border-gray-200 text-gray-600 px-1.5 py-0.5 rounded font-mono text-[10px] uppercase tracking-wider">
+                {p}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span className="text-gray-500 text-[11px]">{coords}</span>
+        )}
       </div>
     );
   };
@@ -362,6 +406,7 @@ export default function StatisticsPage() {
                   <thead className="bg-gray-50 text-gray-600 font-semibold sticky top-0 z-10 shadow-[0_1px_2px_-1px_rgba(0,0,0,0.1)]">
                     <tr>
                       <th className="px-4 py-3">Time</th>
+                      <th className="px-4 py-3">Location</th>
                       <th className="px-4 py-3">Action</th>
                       <th className="px-4 py-3">Previous</th>
                       <th className="px-4 py-3">Updated</th>
@@ -370,24 +415,40 @@ export default function StatisticsPage() {
                   <tbody className="divide-y divide-gray-100">
                     {filteredAndSortedLogs.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="px-4 py-8 text-center text-gray-500">No logs found.</td>
+                        <td colSpan={5} className="px-4 py-8 text-center text-gray-500">No logs found.</td>
                       </tr>
                     ) : (
                       filteredAndSortedLogs.map((log, idx) => {
-                        const timeStr = new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                        const ts = log.timestamp;
+                        // Ensure the timestamp is parsed as UTC: append 'Z' if no timezone info present
+                        const utcTs = ts && !ts.endsWith('Z') && !ts.includes('+') ? ts + 'Z' : ts;
+                        const timeStr = utcTs
+                          ? new Date(utcTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                          : '';
+                        // Build a user-friendly location: "filename - Page N" or just filename
+                        const locationName = log.filename
+                          ? (log.page_number && log.page_number > 1
+                              ? `${log.filename} - Page ${log.page_number}`
+                              : log.filename)
+                          : 'Unknown';
                         return (
-                          <tr key={idx} className="hover:bg-indigo-50/50 transition-colors even:bg-gray-50/50">
+                          <tr key={idx} className="hover:bg-indigo-50/50 transition-colors even:bg-gray-50/50 align-top">
                             <td className="px-4 py-3 whitespace-nowrap">
                               <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded">{timeStr}</span>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-gray-700">
+                              <div className="flex flex-col max-w-[160px]">
+                                <span className="font-semibold truncate" title={locationName}>{locationName}</span>
+                              </div>
                             </td>
                             <td className="px-4 py-3">
                               {getActionBadge(log.action_type)}
                             </td>
-                            <td className="px-4 py-3 font-mono text-xs">
-                              {renderLogValue(log.previous_value, 'prev')}
+                            <td className="px-4 py-3 text-xs">
+                              {renderLogCell(log, 'prev')}
                             </td>
-                            <td className="px-4 py-3 font-mono text-xs">
-                              {renderLogValue(log.updated_value, 'next')}
+                            <td className="px-4 py-3 text-xs">
+                              {renderLogCell(log, 'next')}
                             </td>
                           </tr>
                         );

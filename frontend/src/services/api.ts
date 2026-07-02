@@ -1,8 +1,9 @@
 import axios from 'axios';
 import { BBox } from '../components/BboxCanvas';
 
-const API_BASE_URL = 'http://127.0.0.1:8000/api';
-const AUTH_BASE_URL = 'http://127.0.0.1:8000/api/auth';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api';
+const AUTH_BASE_URL = process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/auth` : 'http://127.0.0.1:8000/api/auth';
+export const getBaseUrl = () => API_BASE_URL.replace(/\/api\/?$/, '');
 
 // Add a request interceptor to attach JWT token
 axios.interceptors.request.use(
@@ -20,7 +21,7 @@ axios.interceptors.request.use(
     }
 );
 
-export const loginUser = async (credentials: any) => {
+export const loginUser = async (credentials: Record<string, string>) => {
     // FastAPI OAuth2PasswordRequestForm expects form data
     const formData = new URLSearchParams();
     formData.append('username', credentials.username);
@@ -32,7 +33,7 @@ export const loginUser = async (credentials: any) => {
     return response.data;
 };
 
-export const signupUser = async (userData: any) => {
+export const signupUser = async (userData: Record<string, string>) => {
     const response = await axios.post(`${AUTH_BASE_URL}/signup`, userData);
     return response.data;
 };
@@ -104,12 +105,16 @@ export interface AnnotationLogCreate {
     action_type: string;
     previous_value?: string;
     updated_value?: string;
+    text_content?: string;
+    page_number?: number;
+    filename?: string;
     timestamp?: string;
 }
 
 export interface StatisticsUpdateRequest {
     document_id: number;
     page_number: number;
+    filename?: string;
     bbox_deleted: number;
     bbox_created: number;
     bbox_edited: number;

@@ -13,6 +13,7 @@ import logging
 
 from database import get_db # type: ignore
 import models, schemas # type: ignore
+from auth_utils import get_current_user
 
 router = APIRouter()
 
@@ -35,11 +36,11 @@ def hash_bytes(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
-def save_single_file(file_path: str, content: bytes, db: Session, file_hash: str) -> models.Document:
+def save_single_file(file_path: str, content: bytes, db: Session, file_hash: str, user_id: int) -> models.Document:
     """Helper: saves pre-read file bytes to disk and creates a Document record in the DB."""
     with open(file_path, "wb") as buffer:
         buffer.write(content)
-    db_doc = models.Document(file_path=file_path, file_hash=file_hash)
+    db_doc = models.Document(file_path=file_path, file_hash=file_hash, user_id=user_id)
     db.add(db_doc)
     db.commit()
     db.refresh(db_doc)
@@ -47,7 +48,7 @@ def save_single_file(file_path: str, content: bytes, db: Session, file_hash: str
 
 
 @router.post("/upload", response_model=schemas.BatchUploadResponse)
-async def upload_document(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_document(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     upload_start = time.time()
     # Read ALL bytes up front so we can hash and also save without re-reading
     content = await file.read()
@@ -64,6 +65,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
             db.query(models.Document)
             .filter(
                 models.Document.file_hash == file_hash,
+                models.Document.user_id == current_user.id,
                 models.Document.is_corrected == True,
             )
             .first()
@@ -76,7 +78,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
             safe_rel_path = urllib.parse.quote(existing_rel_path)
             return schemas.BatchUploadResponse(
                 document_ids=[existing_doc.id],
-                file_paths=[f"http://127.0.0.1:8000/uploads/{safe_rel_path}"],
+                file_paths=[f"/uploads/{safe_rel_path}"],
                 filenames=[existing_filename],
                 is_batch=False,
                 is_cached=True,
@@ -88,11 +90,11 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
         # New file — save to disk and create Document
         unique_filename = f"{uuid.uuid4().hex[:8]}_{filename}"
         file_path = os.path.join(UPLOAD_DIR, unique_filename)
-        db_doc = save_single_file(file_path, content, db, file_hash)
+        db_doc = save_single_file(file_path, content, db, file_hash, current_user.id)
         safe_rel_path = urllib.parse.quote(unique_filename)
         return schemas.BatchUploadResponse(
             document_ids=[db_doc.id],
-            file_paths=[f"http://127.0.0.1:8000/uploads/{safe_rel_path}"],
+            file_paths=[f"/uploads/{safe_rel_path}"],
             filenames=[filename],
             is_batch=False,
             is_cached=False,
@@ -157,6 +159,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
                 db.query(models.Document)
                 .filter(
                     models.Document.file_hash == page_hash,
+                    models.Document.user_id == current_user.id,
                     models.Document.is_corrected == True,
                 )
                 .first()
@@ -166,12 +169,12 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
                 rel_path = existing.file_path.replace("\\", "/").replace("uploads/", "")
                 safe_rel_path = urllib.parse.quote(rel_path)
                 document_ids.append(existing.id)
-                file_paths.append(f"http://127.0.0.1:8000/uploads/{safe_rel_path}")
+                file_paths.append(f"/uploads/{safe_rel_path}")
                 filenames.append(f"{filename} (Page {page_num + 1})")
                 continue
 
             # Save new Document record for the page
-            db_doc = models.Document(file_path=page_img_path, file_hash=page_hash)
+            db_doc = models.Document(file_path=page_img_path, file_hash=page_hash, user_id=current_user.id)
             db.add(db_doc)
             db.commit()
             db.refresh(db_doc)
@@ -179,7 +182,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
             rel_path = page_img_path.replace("\\", "/").replace("uploads/", "")
             safe_rel_path = urllib.parse.quote(rel_path)
             document_ids.append(db_doc.id)
-            file_paths.append(f"http://127.0.0.1:8000/uploads/{safe_rel_path}")
+            file_paths.append(f"/uploads/{safe_rel_path}")
             filenames.append(f"{filename} (Page {page_num + 1})")
 
         logger.info(f"[TIMING] All {total_pages} PDF pages extracted to images in {time.time() - page_extract_start:.4f}s")
@@ -240,6 +243,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
                     db.query(models.Document)
                     .filter(
                         models.Document.file_hash == member_hash,
+                        models.Document.user_id == current_user.id,
                         models.Document.is_corrected == True,
                     )
                     .first()
@@ -250,7 +254,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
                     rel_path = existing.file_path.replace("\\", "/").replace("uploads/", "")
                     safe_rel_path = urllib.parse.quote(rel_path)
                     document_ids.append(existing.id)
-                    file_paths.append(f"http://127.0.0.1:8000/uploads/{safe_rel_path}")
+                    file_paths.append(f"/uploads/{safe_rel_path}")
                     filenames.append(member_name)
                     continue
 
@@ -259,7 +263,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
                 with open(extracted_path, "wb") as target:
                     target.write(member_bytes)
 
-                db_doc = models.Document(file_path=extracted_path, file_hash=member_hash)
+                db_doc = models.Document(file_path=extracted_path, file_hash=member_hash, user_id=current_user.id)
                 db.add(db_doc)
                 db.commit()
                 db.refresh(db_doc)
@@ -267,7 +271,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
                 rel_path = extracted_path.replace("\\", "/").replace("uploads/", "")
                 safe_rel_path = urllib.parse.quote(rel_path)
                 document_ids.append(db_doc.id)
-                file_paths.append(f"http://127.0.0.1:8000/uploads/{safe_rel_path}")
+                file_paths.append(f"/uploads/{safe_rel_path}")
                 filenames.append(member_name)
 
         if not document_ids:
@@ -295,8 +299,11 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
 
 
 @router.get("/results/{document_id}", response_model=schemas.DocumentResponse)
-def get_results(document_id: int, db: Session = Depends(get_db)):
-    doc = db.query(models.Document).filter(models.Document.id == document_id).first()
+def get_results(document_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    doc = db.query(models.Document).filter(
+        models.Document.id == document_id,
+        models.Document.user_id == current_user.id
+    ).first()
     if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=404, detail="Document not found or unauthorized")
     return doc
