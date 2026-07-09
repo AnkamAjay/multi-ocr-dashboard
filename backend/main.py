@@ -13,7 +13,10 @@ models.Base.metadata.create_all(bind=engine)
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-app = FastAPI(title="Multi-OCR Comparison API")
+app = FastAPI(
+    title="Multi-OCR Comparison API",
+    root_path="/ant/api"
+)
 
 # Configure CORS
 app.add_middleware(
@@ -29,11 +32,11 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 from routers import documents, ocr, statistics, auth, stream
 
-app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
-app.include_router(documents.router, prefix="/api", tags=["Documents"])
-app.include_router(ocr.router, prefix="/api", tags=["OCR"])
-app.include_router(statistics.router, prefix="/api", tags=["Statistics"])
-app.include_router(stream.router, prefix="/api", tags=["Stream"])
+app.include_router(auth.router, prefix="/auth", tags=["Auth"])
+app.include_router(documents.router, tags=["Documents"])
+app.include_router(ocr.router, tags=["OCR"])
+app.include_router(statistics.router, tags=["Statistics"])
+app.include_router(stream.router, tags=["Stream"])
 
 @app.get("/")
 def read_root():

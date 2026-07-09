@@ -3,7 +3,7 @@ import { BBox } from '../components/BboxCanvas';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api';
 const AUTH_BASE_URL = process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/auth` : 'http://127.0.0.1:8000/api/auth';
-export const getBaseUrl = () => API_BASE_URL.replace(/\/api\/?$/, '');
+export const getBaseUrl = () => API_BASE_URL;
 
 // Add a request interceptor to attach JWT token
 axios.interceptors.request.use(

@@ -43,8 +43,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const isPublicRoute = (path: string) => {
-        return path === "/login" || path === "/signup";
-    };
+    	return (
+        	path === "/login" ||
+        	path === "/signup" ||
+        	path.endsWith("/login") ||
+        	path.endsWith("/signup")
+    	);
+};		
 
     const fetchUser = async () => {
         try {

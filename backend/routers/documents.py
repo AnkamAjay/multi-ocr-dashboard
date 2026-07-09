@@ -78,7 +78,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
             safe_rel_path = urllib.parse.quote(existing_rel_path)
             return schemas.BatchUploadResponse(
                 document_ids=[existing_doc.id],
-                file_paths=[f"/uploads/{safe_rel_path}"],
+                file_paths=[f"/api/uploads/{safe_rel_path}"],
                 filenames=[existing_filename],
                 is_batch=False,
                 is_cached=True,
@@ -94,7 +94,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
         safe_rel_path = urllib.parse.quote(unique_filename)
         return schemas.BatchUploadResponse(
             document_ids=[db_doc.id],
-            file_paths=[f"/uploads/{safe_rel_path}"],
+            file_paths=[f"/api/uploads/{safe_rel_path}"],
             filenames=[filename],
             is_batch=False,
             is_cached=False,
@@ -169,7 +169,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
                 rel_path = existing.file_path.replace("\\", "/").replace("uploads/", "")
                 safe_rel_path = urllib.parse.quote(rel_path)
                 document_ids.append(existing.id)
-                file_paths.append(f"/uploads/{safe_rel_path}")
+                file_paths.append(f"/api/uploads/{safe_rel_path}")
                 filenames.append(f"{filename} (Page {page_num + 1})")
                 continue
 
@@ -182,7 +182,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
             rel_path = page_img_path.replace("\\", "/").replace("uploads/", "")
             safe_rel_path = urllib.parse.quote(rel_path)
             document_ids.append(db_doc.id)
-            file_paths.append(f"/uploads/{safe_rel_path}")
+            file_paths.append(f"/api/uploads/{safe_rel_path}")
             filenames.append(f"{filename} (Page {page_num + 1})")
 
         logger.info(f"[TIMING] All {total_pages} PDF pages extracted to images in {time.time() - page_extract_start:.4f}s")
@@ -254,7 +254,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
                     rel_path = existing.file_path.replace("\\", "/").replace("uploads/", "")
                     safe_rel_path = urllib.parse.quote(rel_path)
                     document_ids.append(existing.id)
-                    file_paths.append(f"/uploads/{safe_rel_path}")
+                    file_paths.append(f"/api/uploads/{safe_rel_path}")
                     filenames.append(member_name)
                     continue
 
@@ -271,7 +271,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
                 rel_path = extracted_path.replace("\\", "/").replace("uploads/", "")
                 safe_rel_path = urllib.parse.quote(rel_path)
                 document_ids.append(db_doc.id)
-                file_paths.append(f"/uploads/{safe_rel_path}")
+                file_paths.append(f"/api/uploads/{safe_rel_path}")
                 filenames.append(member_name)
 
         if not document_ids:
