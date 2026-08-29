@@ -29,7 +29,11 @@ const getTransliterateLang = (lang: string) => {
 };
 
 export default function Home() {
-  const { user, logout } = useAuth();
+  const { user, logout, loading: authLoading } = useAuth();
+  const [hasRestored, setHasRestored] = useState(false);
+  // Unconditionally true on initial render to guarantee server/client match (no hydration error).
+  // The restore effect will quickly set this to false if no saved session exists.
+  const [isRestoring, setIsRestoring] = useState(true);
   const [file, setFile] = useState<File | null>(null);
 
   // ── Batch state ──
@@ -121,8 +125,10 @@ export default function Home() {
     setTotalPages(1);
   };
 
-  // Sync state to localStorage
+  // Sync state to localStorage — only after initial restoration has completed
+  // so we never wipe saved session data during the first render before restoreSession runs.
   useEffect(() => {
+    if (!hasRestored) return;
     if (batchDocIds.length > 0) {
       localStorage.setItem('batchDocIds', JSON.stringify(batchDocIds));
       localStorage.setItem('batchFilePaths', JSON.stringify(batchFilePaths));
@@ -131,6 +137,8 @@ export default function Home() {
       localStorage.setItem('isBatch', isBatch.toString());
       localStorage.setItem('sourceFileType', sourceFileType);
       localStorage.setItem('totalPages', totalPages.toString());
+      localStorage.setItem('language', language);
+      localStorage.setItem('modality', modality);
       if (file) {
         localStorage.setItem('file_name', file.name);
         localStorage.setItem('file_type', file.type);
@@ -143,13 +151,18 @@ export default function Home() {
       localStorage.removeItem('isBatch');
       localStorage.removeItem('sourceFileType');
       localStorage.removeItem('totalPages');
+      localStorage.removeItem('language');
+      localStorage.removeItem('modality');
       localStorage.removeItem('file_name');
       localStorage.removeItem('file_type');
     }
-  }, [batchDocIds, batchFilePaths, batchFilenames, activeDocIndex, isBatch, file, sourceFileType, totalPages]);
+  }, [hasRestored, batchDocIds, batchFilePaths, batchFilenames, activeDocIndex, isBatch, file, sourceFileType, totalPages, language, modality]);
 
   // Restore state from localStorage on mount
   useEffect(() => {
+    if (authLoading || hasRestored) return;
+    setHasRestored(true);
+
     const savedBatchDocIds = localStorage.getItem('batchDocIds');
     if (savedBatchDocIds) {
       try {
@@ -163,8 +176,11 @@ export default function Home() {
           const ftype = localStorage.getItem('file_type') || '';
           const sft = localStorage.getItem('sourceFileType') || 'IMAGE';
           const tp = parseInt(localStorage.getItem('totalPages') || '1', 10);
+          const savedLang = localStorage.getItem('language') || 'hindi';
+          const savedModality = localStorage.getItem('modality') || 'printed';
 
           const restoreSession = async () => {
+            setIsRestoring(true);
             const resultsMap: Record<number, any[]> = {};
             let hasValidDoc = false;
             let cachedCorrectedJson: BBox[] | null = null;
@@ -200,19 +216,37 @@ export default function Home() {
               setIsBatch(batch);
               setSourceFileType(sft);
               setTotalPages(tp);
+              setLanguage(savedLang);
+              setModality(savedModality);
               if (fname) {
                 setFile({ name: fname, type: ftype } as any);
               }
               setBatchResults(resultsMap);
 
               const currentDocId = docIds[docIndex];
-              if (hasCachedCorrection && cachedCorrectedJson) {
-                setCachedCorrectionsForDoc(cachedCorrectedJson);
-                setBboxList(cachedCorrectedJson);
-                setInitialBboxList(cachedCorrectedJson);
-                setEditedText((cachedCorrectedJson as BBox[]).map((b: BBox) => b.text).join('\n'));
-              } else if (resultsMap[currentDocId] && resultsMap[currentDocId].length > 0) {
-                // Determine best model for the current doc
+              const draftKey = `annotation_draft_${user?.id || 'guest'}_${currentDocId}`;
+              const savedDraftStr = localStorage.getItem(draftKey);
+              let restoredFromDraft = false;
+
+              if (savedDraftStr) {
+                try {
+                  const draft = JSON.parse(savedDraftStr);
+                  if (draft && draft.editingId !== undefined) {
+                    setEditingId(draft.editingId);
+                    setBboxList(draft.bboxList || []);
+                    setEditedText(draft.editedText || "");
+                    setInitialBboxList(draft.initialBboxList || []);
+                    setEditStartTime(draft.editStartTime || null);
+                    setBboxHistory([draft.bboxList || []]);
+                    restoredFromDraft = true;
+                  }
+                } catch(e) {
+                  console.error("Failed to parse draft", e);
+                }
+              }
+
+              // Determine best model for the current doc (unconditionally so we have fallback primaryResultId)
+              if (resultsMap[currentDocId] && resultsMap[currentDocId].length > 0) {
                 const res = resultsMap[currentDocId];
                 const fused = res.find(r => r.model_name.includes("Fused Result"));
                 if (fused) {
@@ -225,6 +259,15 @@ export default function Home() {
                   setPrimaryResultId(best.id);
                 }
               }
+
+              if (restoredFromDraft) {
+                // Draft already restored the active editing session
+              } else if (hasCachedCorrection && cachedCorrectedJson) {
+                setCachedCorrectionsForDoc(cachedCorrectedJson);
+                setBboxList(cachedCorrectedJson);
+                setInitialBboxList(cachedCorrectedJson);
+                setEditedText((cachedCorrectedJson as BBox[]).map((b: BBox) => b.text).join('\n'));
+              }
             } catch (err) {
               console.error("Failed to restore session, resetting:", err);
               localStorage.removeItem('batchDocIds');
@@ -234,17 +277,43 @@ export default function Home() {
               localStorage.removeItem('isBatch');
               localStorage.removeItem('sourceFileType');
               localStorage.removeItem('totalPages');
+              localStorage.removeItem('language');
+              localStorage.removeItem('modality');
               localStorage.removeItem('file_name');
               localStorage.removeItem('file_type');
+            } finally {
+              setIsRestoring(false);
             }
           };
           restoreSession();
+        } else {
+          setIsRestoring(false);
         }
       } catch (e) {
         console.error("Error parsing localStorage state:", e);
+        setIsRestoring(false);
       }
+    } else {
+      setIsRestoring(false);
     }
-  }, []);
+  }, [authLoading, hasRestored, user]);
+
+  // Auto-save draft — only after initial restoration has completed
+  // so we never overwrite a valid draft with empty state on first mount.
+  useEffect(() => {
+    if (!hasRestored) return;
+    if (!activeDocId || editingId === null) return;
+    const draftKey = `annotation_draft_${user?.id || 'guest'}_${activeDocId}`;
+    const draftData = {
+      editingId,
+      bboxList,
+      editedText,
+      initialBboxList,
+      editStartTime,
+      timestamp: Date.now()
+    };
+    localStorage.setItem(draftKey, JSON.stringify(draftData));
+  }, [activeDocId, editingId, bboxList, editedText, initialBboxList, editStartTime, user]);
 
   // SSE Stream Effect for active document
   useEffect(() => {
@@ -305,6 +374,25 @@ export default function Home() {
     setBboxList([]);
     setInitialBboxList([]);
 
+    const draftKey = `annotation_draft_${user?.id || 'guest'}_${docId}`;
+    const savedDraftStr = localStorage.getItem(draftKey);
+    let restoredFromDraft = false;
+
+    if (savedDraftStr) {
+      try {
+        const draft = JSON.parse(savedDraftStr);
+        if (draft && draft.editingId !== undefined) {
+          setEditingId(draft.editingId);
+          setBboxList(draft.bboxList || []);
+          setEditedText(draft.editedText || "");
+          setInitialBboxList(draft.initialBboxList || []);
+          setEditStartTime(draft.editStartTime || null);
+          setBboxHistory([draft.bboxList || []]);
+          restoredFromDraft = true;
+        }
+      } catch(e) {}
+    }
+
     if (docId && (!batchResults[docId] || batchResults[docId].length === 0)) {
       try {
         const data = await getResults(docId);
@@ -320,14 +408,16 @@ export default function Home() {
              return prevIds;
           });
         } else if (data.is_corrected && data.corrected_json) {
-          // Cached logic
-          setCachedCorrectionsForDoc(data.corrected_json);
-          setBboxList(data.corrected_json);
-          setEditingId(-1);
-          setPrimaryResultId(-1);
-          setEditedText(data.corrected_json.map((b: BBox) => b.text).join('\n'));
-          setInitialBboxList(data.corrected_json);
-          setEditStartTime(Date.now());
+          if (!restoredFromDraft) {
+            // Cached logic
+            setCachedCorrectionsForDoc(data.corrected_json);
+            setBboxList(data.corrected_json);
+            setEditingId(-1);
+            setPrimaryResultId(-1);
+            setEditedText(data.corrected_json.map((b: BBox) => b.text).join('\n'));
+            setInitialBboxList(data.corrected_json);
+            setEditStartTime(Date.now());
+          }
         }
       } catch (err) {
         console.error("Failed to fetch results:", err);
@@ -361,7 +451,7 @@ export default function Home() {
   };
 
   const handleUploadAndProcess = async () => {
-    if (!file) {
+    if (!file && batchDocIds.length === 0) {
       showError("Please upload a document to proceed.");
       return;
     }
@@ -374,38 +464,47 @@ export default function Home() {
     setBboxList([]);
 
     try {
-      const batchData = await uploadDocument(file);
+      let documentIdsToProcess = batchDocIds;
+      let total = batchDocIds.length;
+      let isBatchLocal = isBatch;
 
-      setBatchDocIds(batchData.document_ids);
-      setBatchFilePaths(batchData.file_paths);
-      setBatchFilenames(batchData.filenames);
-      setIsBatch(batchData.is_batch);
-      setActiveDocIndex(0);
-      setSourceFileType(batchData.source_file_type || "IMAGE");
-      setTotalPages(batchData.total_pages || 1);
+      // If no doc IDs exist, this is a fresh file selection that needs to be uploaded.
+      if (batchDocIds.length === 0) {
+        if (!file) throw new Error("No file selected");
+        const batchData = await uploadDocument(file);
 
-      // Cache Hit Check
-      if (batchData.is_cached && batchData.cached_corrected_json) {
-        setCachedCorrectionsForDoc(batchData.cached_corrected_json);
-        setBboxList(batchData.cached_corrected_json);
-        setEditingId(-1); // Indicates cached doc editing
-        setPrimaryResultId(-1);
-        setEditedText(batchData.cached_corrected_json.map((b: BBox) => b.text).join('\n'));
-        setInitialBboxList(batchData.cached_corrected_json);
-        setEditStartTime(Date.now());
-        showSuccess("✅ Previous corrections loaded. No OCR needed.");
-        setLoading(false);
-        return;
+        setBatchDocIds(batchData.document_ids);
+        setBatchFilePaths(batchData.file_paths);
+        setBatchFilenames(batchData.filenames);
+        setIsBatch(batchData.is_batch);
+        setActiveDocIndex(0);
+        setSourceFileType(batchData.source_file_type || "IMAGE");
+        setTotalPages(batchData.total_pages || 1);
+
+        documentIdsToProcess = batchData.document_ids;
+        total = batchData.document_ids.length;
+        isBatchLocal = batchData.is_batch;
+
+        // Cache Hit Check (only applicable for fresh uploads)
+        if (batchData.is_cached && batchData.cached_corrected_json) {
+          setCachedCorrectionsForDoc(batchData.cached_corrected_json);
+          setBboxList(batchData.cached_corrected_json);
+          setEditingId(-1); // Indicates cached doc editing
+          setPrimaryResultId(-1);
+          setEditedText(batchData.cached_corrected_json.map((b: BBox) => b.text).join('\n'));
+          setInitialBboxList(batchData.cached_corrected_json);
+          setEditStartTime(Date.now());
+          showSuccess("✅ Previous corrections loaded. No OCR needed.");
+          setLoading(false);
+          return;
+        }
       }
 
-      const total = batchData.document_ids.length;
       setBatchProgress({ done: 0, total });
-
-      let completedCount = 0;
 
       // Fire all process endpoints so they enqueue in the background
       await Promise.all(
-        batchData.document_ids.map(async (docId: number) => {
+        documentIdsToProcess.map(async (docId: number) => {
           try {
             await processDocument(docId, language, modality);
           } catch (err) {
@@ -414,7 +513,7 @@ export default function Home() {
         })
       );
 
-      if (batchData.is_batch) {
+      if (isBatchLocal) {
         showSuccess(`Batch processing started for ${total} documents. Streaming results... 🚀`);
       } else {
         showSuccess("Document processing started. Streaming results... 🚀");
@@ -740,6 +839,10 @@ export default function Home() {
       setInitialBboxList(finalBboxes);
       setEditStartTime(Date.now());
 
+      if (activeDocId) {
+        localStorage.removeItem(`annotation_draft_${user?.id || 'guest'}_${activeDocId}`);
+      }
+
       showSuccess("Gold Standard corrections & statistics saved ✅");
       setEditedText(fullText);
     } catch (error) {
@@ -934,6 +1037,16 @@ export default function Home() {
                 </div>
               </div>
             </div>
+          ) : isRestoring ? (
+            /* Session restoration in progress — prevent upload screen from flashing */
+            <div className="flex flex-col items-center justify-center flex-1 gap-4 py-12 text-center">
+              <svg className="animate-spin h-10 w-10 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+              </svg>
+              <p className="text-base font-semibold text-indigo-600">Restoring your previous session…</p>
+              <p className="text-xs text-gray-400">Please wait while your document and annotations are loaded.</p>
+            </div>
           ) : (
             <div className="flex flex-col gap-5 flex-1">
               <div className="flex flex-col gap-2">
@@ -1065,7 +1178,12 @@ export default function Home() {
                 </div>
 
                 <div className="flex justify-between mt-5 pt-4 border-t border-gray-100 shrink-0 items-center">
-                  <button className="px-6 py-2.5 text-gray-700 bg-white hover:bg-gray-100 border border-gray-300 rounded-lg font-semibold" onClick={() => setEditingId(null)}>
+                  <button className="px-6 py-2.5 text-gray-700 bg-white hover:bg-gray-100 border border-gray-300 rounded-lg font-semibold" onClick={() => {
+                    setEditingId(null);
+                    if (activeDocId) {
+                      localStorage.removeItem(`annotation_draft_${user?.id || 'guest'}_${activeDocId}`);
+                    }
+                  }}>
                     Cancel
                   </button>
                   <button className="px-6 py-2.5 text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-md font-semibold flex items-center gap-2" onClick={handleSaveCorrections}>
