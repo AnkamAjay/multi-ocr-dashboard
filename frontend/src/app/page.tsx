@@ -1008,7 +1008,7 @@ export default function Home() {
 
             {/* Edit Mode View */}
             {editingId !== null && (
-              <div className="flex flex-col flex-1 bg-white border-2 border-indigo-300 rounded-xl shadow-lg p-2 md:p-6 transition-all duration-300 lg:h-[80vh]">
+              <div className="flex flex-col flex-1 bg-white border-2 border-indigo-300 rounded-xl shadow-lg p-2 md:p-6 transition-all duration-300">
                 <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-200 shrink-0">
                   <div>
                     <h3 className="font-bold text-2xl text-indigo-700">
@@ -1133,7 +1133,7 @@ export default function Home() {
                     const source = primaryResult.raw_json?.regions ?? [];
                     if (source.length === 0) {
                       return (
-                        <div className="text-gray-700 flex-1 flex flex-col gap-2 overflow-auto bg-gray-50 p-5 rounded-lg border border-gray-100">
+                        <div className="text-gray-700 flex-1 flex flex-col gap-2 overflow-auto bg-gray-50 p-5 rounded-lg border border-gray-100 lg:max-h-[60vh]">
                           <p className="whitespace-pre-wrap flex-1 text-base leading-relaxed">
                             {primaryResult.corrected_text || primaryResult.extracted_text}
                           </p>

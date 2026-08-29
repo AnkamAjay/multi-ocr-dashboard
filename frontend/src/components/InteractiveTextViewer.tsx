@@ -63,7 +63,7 @@ export default function InteractiveTextViewer({
 
   return (
     <div
-      className="w-full flex-1 bg-gray-50 text-gray-700 border border-gray-200 p-4 rounded-lg overflow-y-auto focus:outline-none min-h-[250px] text-base leading-relaxed"
+      className="w-full flex-1 bg-gray-50 text-gray-700 border border-gray-200 p-4 rounded-lg overflow-y-auto focus:outline-none min-h-[250px] lg:max-h-[60vh] text-base leading-relaxed"
       onClick={handleContainerClick}
     >
       {lines.map((line, lineIdx) => (
