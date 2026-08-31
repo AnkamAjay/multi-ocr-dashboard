@@ -245,9 +245,29 @@ async def process_document(document_id: int, background_tasks: BackgroundTasks, 
     else:
         raise HTTPException(status_code=400, detail="Invalid modality provided")
 
-    # If already processing or completed, just return status
-    if doc.status in ["PROCESSING", "COMPLETED"]:
-        return {"status": doc.status, "document_id": document_id}
+    # If Gold Standard already exists, return it directly
+    if doc.is_corrected and doc.corrected_json:
+        return {
+            "status": "cached",
+            "document_id": document_id,
+            "is_corrected": True,
+            "corrected_json": doc.corrected_json
+        }
+
+    # If already processing or completed, handle accordingly
+    if doc.status == "COMPLETED":
+        existing_results = db.query(models.OCRResult).filter(models.OCRResult.document_id == document_id).all()
+        if existing_results:
+            results_data = [schemas.OCRResultResponse.model_validate(r, from_attributes=True).model_dump() for r in existing_results]
+            return {
+                "status": "completed",
+                "document_id": document_id,
+                "ocr_results": results_data
+            }
+        # If COMPLETED but no results found, we might want to re-run, but for now we'll just fall through to re-processing if somehow empty
+
+    if doc.status == "PROCESSING":
+        return {"status": "processing", "document_id": document_id}
         
     doc.status = "PENDING"
     db.commit()

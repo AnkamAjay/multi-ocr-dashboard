@@ -233,6 +233,7 @@ export default function Home() {
                   const draft = JSON.parse(savedDraftStr);
                   if (draft && draft.editingId !== undefined) {
                     setEditingId(draft.editingId);
+                    setPrimaryResultId(draft.editingId);
                     setBboxList(draft.bboxList || []);
                     setEditedText(draft.editedText || "");
                     setInitialBboxList(draft.initialBboxList || []);
@@ -240,33 +241,34 @@ export default function Home() {
                     setBboxHistory([draft.bboxList || []]);
                     restoredFromDraft = true;
                   }
-                } catch(e) {
+                } catch (e) {
                   console.error("Failed to parse draft", e);
                 }
               }
 
-              // Determine best model for the current doc (unconditionally so we have fallback primaryResultId)
-              if (resultsMap[currentDocId] && resultsMap[currentDocId].length > 0) {
-                const res = resultsMap[currentDocId];
-                const fused = res.find(r => r.model_name.includes("Fused Result"));
-                if (fused) {
-                  setPrimaryResultId(fused.id);
-                } else {
-                  const wordCount = (t: string) => (t || "").trim().split(/\s+/).filter(Boolean).length;
-                  const best = res.reduce((b: any, c: any) =>
-                    wordCount(c.extracted_text) > wordCount(b.extracted_text) ? c : b
-                  , res[0]);
-                  setPrimaryResultId(best.id);
-                }
+              // Always load cached corrections if available so they're ready for the home page or cancel actions
+              if (hasCachedCorrection && cachedCorrectedJson) {
+                setCachedCorrectionsForDoc(cachedCorrectedJson);
               }
 
+              // Single mutually-exclusive priority chain — identical to handleSelectDocument():
+              //   Priority 1: localStorage draft  (already handled above, restoredFromDraft=true)
+              //   Priority 2: Saved Gold Standard (is_corrected)
+              //   Priority 3: Existing OCR/fused results
+              // The fused OCR primaryResultId must NOT be set when a Gold Standard exists.
               if (restoredFromDraft) {
-                // Draft already restored the active editing session
+                // Draft already restored the active editing session — nothing more to do.
               } else if (hasCachedCorrection && cachedCorrectedJson) {
-                setCachedCorrectionsForDoc(cachedCorrectedJson);
+                // Gold Standard path — mirrors handleSelectDocument's corrected-doc branch exactly.
                 setBboxList(cachedCorrectedJson);
                 setInitialBboxList(cachedCorrectedJson);
                 setEditedText((cachedCorrectedJson as BBox[]).map((b: BBox) => b.text).join('\n'));
+                setEditingId(-1);
+                setPrimaryResultId(-1);
+                setEditStartTime(Date.now());
+              } else if (resultsMap[currentDocId] && resultsMap[currentDocId].length > 0) {
+                // OCR results path — only reached when no Gold Standard exists.
+                autoSelectBestModel(resultsMap[currentDocId]);
               }
             } catch (err) {
               console.error("Failed to restore session, resetting:", err);
@@ -321,11 +323,11 @@ export default function Home() {
 
     // Check if we already have fused result (fully complete)
     if (batchResults[activeDocId] && batchResults[activeDocId].some((r: any) => r.model_name.includes("Fused Result"))) {
-      return; 
+      return;
     }
 
     const stream = createDocumentStream(activeDocId);
-    
+
     const handleModelUpdate = (e: MessageEvent) => {
       const result = JSON.parse(e.data);
       setBatchResults(prev => {
@@ -383,6 +385,7 @@ export default function Home() {
         const draft = JSON.parse(savedDraftStr);
         if (draft && draft.editingId !== undefined) {
           setEditingId(draft.editingId);
+          setPrimaryResultId(draft.editingId);
           setBboxList(draft.bboxList || []);
           setEditedText(draft.editedText || "");
           setInitialBboxList(draft.initialBboxList || []);
@@ -390,40 +393,57 @@ export default function Home() {
           setBboxHistory([draft.bboxList || []]);
           restoredFromDraft = true;
         }
-      } catch(e) {}
+      } catch (e) { }
     }
 
     if (docId && (!batchResults[docId] || batchResults[docId].length === 0)) {
       try {
         const data = await getResults(docId);
-        if (data.ocr_results && data.ocr_results.length > 0) {
+
+        // Always load cached corrections if available so they are ready for the home page/cancel actions
+        if (data.is_corrected && data.corrected_json) {
+          setCachedCorrectionsForDoc(data.corrected_json);
+        }
+
+        // Priority 1: Gold Standard (is_corrected) — must be checked BEFORE ocr_results
+        // because a corrected document always has both ocr_results AND corrected_json in the response.
+        if (data.is_corrected && data.corrected_json && !restoredFromDraft) {
+          setBboxList(data.corrected_json);
+          setEditingId(-1);
+          setPrimaryResultId(-1);
+          setEditedText(data.corrected_json.map((b: BBox) => b.text).join('\n'));
+          setInitialBboxList(data.corrected_json);
+          setEditStartTime(Date.now());
+        } else if (data.ocr_results && data.ocr_results.length > 0) {
+          // Priority 2: Existing OCR/fused results
           setBatchResults(prev => ({ ...prev, [docId]: data.ocr_results }));
-          
-          // Fix Issue #2: Only update best model if the fetched docId is still the active one
-          // We can check this safely by doing it in a React effect, but for immediate response:
-          setBatchDocIds(prevIds => {
-             if (prevIds[index] === docId) {
+
+          // Only update best model if the fetched docId is still the active one and we didn't restore a draft
+          if (!restoredFromDraft && (!data.is_corrected || !data.corrected_json)) {
+            setBatchDocIds(prevIds => {
+              if (prevIds[index] === docId) {
                 autoSelectBestModel(data.ocr_results);
-             }
-             return prevIds;
-          });
-        } else if (data.is_corrected && data.corrected_json) {
-          if (!restoredFromDraft) {
-            // Cached logic
-            setCachedCorrectionsForDoc(data.corrected_json);
-            setBboxList(data.corrected_json);
-            setEditingId(-1);
-            setPrimaryResultId(-1);
-            setEditedText(data.corrected_json.map((b: BBox) => b.text).join('\n'));
-            setInitialBboxList(data.corrected_json);
-            setEditStartTime(Date.now());
+              }
+              return prevIds;
+            });
           }
         }
       } catch (err) {
         console.error("Failed to fetch results:", err);
       }
-    } else if (batchResults[docId] && batchResults[docId].length > 0) {
-      autoSelectBestModel(batchResults[docId]);
+    } else if (batchResults[docId] && batchResults[docId].length > 0 && !restoredFromDraft) {
+      // Results already in state — but if this is a Gold Standard doc, restore that instead
+      // of auto-selecting the fused result (which would overwrite primaryResultId(-1)).
+      if (cachedCorrectionsForDoc) {
+        setBboxList(cachedCorrectionsForDoc);
+        setInitialBboxList(cachedCorrectionsForDoc);
+        setEditedText(cachedCorrectionsForDoc.map((b: BBox) => b.text).join('\n'));
+        setEditingId(-1);
+        setPrimaryResultId(-1);
+        setEditStartTime(Date.now());
+      } else {
+        autoSelectBestModel(batchResults[docId]);
+      }
     }
   };
 
@@ -436,17 +456,17 @@ export default function Home() {
     }
 
     const wordCount = (t: string) => (t || "").trim().split(/\s+/).filter(Boolean).length;
-    
+
     const best = results.reduce((b: any, c: any) => {
-        const confB = parseInt(b.model_name.match(/Confidence:\s*(\d+)/)?.[1] || "0", 10);
-        const confC = parseInt(c.model_name.match(/Confidence:\s*(\d+)/)?.[1] || "0", 10);
-        
-        if (confC > confB) return c;
-        if (confB > confC) return b;
-        
-        return wordCount(c.extracted_text) > wordCount(b.extracted_text) ? c : b;
+      const confB = parseInt(b.model_name.match(/Confidence:\s*(\d+)/)?.[1] || "0", 10);
+      const confC = parseInt(c.model_name.match(/Confidence:\s*(\d+)/)?.[1] || "0", 10);
+
+      if (confC > confB) return c;
+      if (confB > confC) return b;
+
+      return wordCount(c.extracted_text) > wordCount(b.extracted_text) ? c : b;
     }, results[0]);
-    
+
     setPrimaryResultId(best.id);
   };
 
@@ -458,10 +478,6 @@ export default function Home() {
     setLoading(true);
     setErrorMessage(null);
     setSuccessMessage(null);
-    setBatchResults({});
-    setBatchProgress(null);
-    setCachedCorrectionsForDoc(null);
-    setBboxList([]);
 
     try {
       let documentIdsToProcess = batchDocIds;
@@ -500,23 +516,42 @@ export default function Home() {
         }
       }
 
-      setBatchProgress({ done: 0, total });
-
       // Fire all process endpoints so they enqueue in the background
+      let anyStarted = false;
       await Promise.all(
         documentIdsToProcess.map(async (docId: number) => {
           try {
-            await processDocument(docId, language, modality);
+            const res = await processDocument(docId, language, modality);
+            if (res?.status === "cached" || res?.status === "completed") {
+              // Document is already processed or cached
+            } else {
+              anyStarted = true;
+            }
           } catch (err) {
             console.error(`Error enqueuing document ${docId}:`, err);
+            anyStarted = true;
           }
         })
       );
 
-      if (isBatchLocal) {
-        showSuccess(`Batch processing started for ${total} documents. Streaming results... 🚀`);
+      if (anyStarted) {
+        setBatchResults({});
+        setBatchProgress({ done: 0, total });
+        setCachedCorrectionsForDoc(null);
+        setBboxList([]);
+        if (isBatchLocal) {
+          showSuccess(`Batch processing started for ${total} documents. Streaming results... 🚀`);
+        } else {
+          showSuccess("Document processing started. Streaming results... 🚀");
+        }
       } else {
-        showSuccess("Document processing started. Streaming results... 🚀");
+        // No new processing started. Everything was cached or completed!
+        // We re-invoke handleSelectDocument for the active doc so it restores draft OR loads the existing result
+        // We only do this if it was already uploaded (batchDocIds.length > 0 originally)
+        if (batchDocIds.length > 0) {
+          await handleSelectDocument(activeDocIndex);
+        }
+        showSuccess("✅ Existing results loaded. No OCR needed.");
       }
     } catch (error) {
       console.error("Error processing document:", error);
@@ -911,8 +946,19 @@ export default function Home() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [editingId, handleSaveCorrections, handleUndo, handleDeleteBbox, handleMergeBbox, handleZoomIn, handleZoomOut, handleZoomReset]);
 
-  const primaryResult = ocrResults.find(r => r.id === primaryResultId) || ocrResults[0];
-
+  const primaryResult = (primaryResultId === -1 && cachedCorrectionsForDoc)
+    ? {
+        id: -1,
+        model_name: "Cached Corrections",
+        corrected_text: editedText || cachedCorrectionsForDoc.map((b: BBox) => b.text).join('\n'),
+        raw_json: {
+          regions: cachedCorrectionsForDoc.map((b: BBox) => ({
+            bounding_box: { x: b.x, y: b.y, w: b.w, h: b.h },
+            text: b.text
+          }))
+        }
+      }
+    : (ocrResults.find(r => r.id === primaryResultId) || ocrResults[0]);
   return (
     <div className="min-h-screen p-4 md:p-8 font-sans text-gray-800 bg-[#f8fafc]">
       {/* TOASTS */}
@@ -1272,7 +1318,7 @@ export default function Home() {
                         <InteractiveTextViewer
                           bboxList={previewBboxes}
                           selectedIds={[]}
-                          onSelectChange={() => {}}
+                          onSelectChange={() => { }}
                         />
                       </div>
                     );
