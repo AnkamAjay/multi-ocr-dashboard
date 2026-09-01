@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   uploadDocument,
   processDocument,
@@ -56,6 +56,12 @@ export default function Home() {
 
   // ── Best Model & Edit State ──
   const [primaryResultId, setPrimaryResultId] = useState<number | null>(null);
+  const [manualSelectedId, setManualSelectedIdState] = useState<number | null>(null);
+  const manualSelectedIdRef = useRef<number | null>(null);
+  const setManualSelectedId = (id: number | null) => {
+    manualSelectedIdRef.current = id;
+    setManualSelectedIdState(id);
+  };
   const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
   const [cachedCorrectionsForDoc, setCachedCorrectionsForDoc] = useState<BBox[] | null>(null);
 
@@ -111,6 +117,7 @@ export default function Home() {
     setBatchResults({});
     setEditingId(null);
     setPrimaryResultId(null);
+    setManualSelectedId(null);
     setCachedCorrectionsForDoc(null);
     setEditedText("");
     setZoomLevel(1);
@@ -346,8 +353,13 @@ export default function Home() {
       });
     };
 
+    const handlePageCompleted = () => {
+      stream.close();
+    };
+
     stream.addEventListener("MODEL_COMPLETED", handleModelUpdate);
     stream.addEventListener("FUSION_COMPLETED", handleModelUpdate);
+    stream.addEventListener("PAGE_COMPLETED", handlePageCompleted);
 
     return () => {
       stream.close();
@@ -362,6 +374,7 @@ export default function Home() {
       setBatchFilenames([]);
       setActiveDocIndex(0);
       setPrimaryResultId(null);
+      setManualSelectedId(null);
       setEditingId(null);
       setSourceFileType("IMAGE");
       setTotalPages(1);
@@ -373,6 +386,7 @@ export default function Home() {
     setActiveDocIndex(index);
     setEditingId(null);
     setPrimaryResultId(null);
+    setManualSelectedId(null);
     setBboxList([]);
     setInitialBboxList([]);
 
@@ -448,6 +462,7 @@ export default function Home() {
   };
 
   const autoSelectBestModel = (results: any[]) => {
+    if (manualSelectedIdRef.current !== null) return;
     if (!results || results.length === 0) return;
     const fused = results.find(r => r.model_name.includes("Fused Result"));
     if (fused) {
@@ -1286,8 +1301,10 @@ export default function Home() {
                   <div className="flex justify-between items-center mb-4">
                     <div>
                       <span className={`font-bold text-2xl ${primaryResult.model_name.includes("Fused Result") ? "text-orange-700" : "text-indigo-700"}`}>{primaryResult.model_name}</span>
-                      <span className="ml-3 bg-amber-400 text-amber-900 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
-                        {primaryResult.model_name.includes("Fused Result") ? "★ Auto Selected / Recommended" : "★ Auto-Selected Best"}
+                      <span className={`ml-3 text-[11px] font-bold px-2.5 py-0.5 rounded-full ${manualSelectedId === primaryResult.id ? "bg-indigo-100 text-indigo-700" : "bg-amber-400 text-amber-900"}`}>
+                        {manualSelectedId === primaryResult.id 
+                          ? "Selected" 
+                          : (primaryResult.model_name.includes("Fused Result") ? "★ Auto Selected / Recommended" : "★ Auto-Selected Best")}
                       </span>
                     </div>
 
@@ -1366,8 +1383,10 @@ export default function Home() {
         <CompareModal
           results={ocrResults}
           primaryResultId={primaryResultId}
+          manualSelectedId={manualSelectedId}
           onSelectModel={(id) => {
             setPrimaryResultId(id);
+            setManualSelectedId(id);
             if (editingId !== null) {
               handleStartEditing(id); // Reload canvas
             }

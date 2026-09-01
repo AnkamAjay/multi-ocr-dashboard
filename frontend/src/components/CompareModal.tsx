@@ -11,6 +11,7 @@ interface ModelResult {
 interface CompareModalProps {
   results: ModelResult[];
   primaryResultId: number | null;
+  manualSelectedId: number | null;
   onSelectModel: (resultId: number) => void;
   onClose: () => void;
 }
@@ -18,6 +19,7 @@ interface CompareModalProps {
 export default function CompareModal({
   results,
   primaryResultId,
+  manualSelectedId,
   onSelectModel,
   onClose,
 }: CompareModalProps) {
@@ -59,6 +61,7 @@ export default function CompareModal({
           {results.map((result) => {
             const isActive = result.id === primaryResultId;
             const isBest = result.id === bestId;
+            const isManualSelected = result.id === manualSelectedId;
             const isFused = result.model_name.includes("Fused Result");
             const wc = wordCount(result.extracted_text);
 
@@ -74,9 +77,9 @@ export default function CompareModal({
                 }`}
               >
                 {/* Best badge */}
-                {isBest && (
-                  <div className={`absolute -top-3 left-4 text-[11px] font-bold px-3 py-0.5 rounded-full shadow ${isFused ? 'bg-amber-400 text-amber-900' : 'bg-amber-400 text-amber-900'}`}>
-                    {isFused ? "★ Auto Selected / Recommended" : "★ Auto-Selected Best"}
+                {(isBest || isManualSelected) && (
+                  <div className={`absolute -top-3 left-4 text-[11px] font-bold px-3 py-0.5 rounded-full shadow ${isManualSelected ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-400 text-amber-900'}`}>
+                    {isManualSelected ? "Selected" : (isFused ? "★ Auto Selected / Recommended" : "★ Auto-Selected Best")}
                   </div>
                 )}
 
